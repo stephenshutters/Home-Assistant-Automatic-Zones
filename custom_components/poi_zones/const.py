@@ -42,7 +42,7 @@ DEFAULT_DISTINGUISH_DUPLICATES: Final = False  # same name -> same zone name
 # Nominatim and Overpass both require an identifying User-Agent. Replace the
 # URL with the home page of YOUR fork before publishing it.
 USER_AGENT: Final = (
-    "HomeAssistant-POIZones/2.0 (+https://github.com/DEADSEC-SECURITY/ha-poi-zones)"
+    "HomeAssistant-POIZones/2.0 (+https://github.com/stephenshutters/Home-Assistant-Automatic-Zones)"
 )
 NOMINATIM_URL: Final = "https://nominatim.openstreetmap.org/search"
 # Tried in order; the next one is used if a request fails.
