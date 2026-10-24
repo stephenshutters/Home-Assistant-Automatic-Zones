@@ -1,4 +1,4 @@
-# Automatic Zones for Home Assistant
+# <img src="custom_components/automatic_zones/brands/Logo.png" alt="Project Logo" width="50" height="50">  Automatic Zones for Home Assistant
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
 
