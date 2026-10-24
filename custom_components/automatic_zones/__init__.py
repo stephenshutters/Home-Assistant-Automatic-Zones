@@ -1,4 +1,4 @@
-"""POI Zones integration for Home Assistant."""
+"""Automatic Zones integration for Home Assistant."""
 from __future__ import annotations
 
 import logging
