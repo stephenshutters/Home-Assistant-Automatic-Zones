@@ -1,7 +1,7 @@
 {
-  "name": "POI Zones",
+  "name": "Automatic Zones",
   "content_in_root": false,
-  "filename": "poi_zones",
+  "filename": "automatic_zones",
   "render_readme": true,
   "domains": ["sensor", "zone"],
   "homeassistant": "2024.11.0",
