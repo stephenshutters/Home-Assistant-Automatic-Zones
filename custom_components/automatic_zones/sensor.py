@@ -1,4 +1,4 @@
-"""Sensor platform for POI Zones."""
+"""Sensor platform for Automatic Zones."""
 from __future__ import annotations
 
 from typing import Any
