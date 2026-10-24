@@ -22,8 +22,8 @@ jobs:
       - name: Create release archive
         run: |
           cd custom_components
-          zip -r poi_zones.zip poi_zones/
-          mv poi_zones.zip ../
+          zip -r automatic_zones.zip automatic_zones/
+          mv automatic_zones.zip ../
 
       - name: Generate release notes
         id: release_notes
@@ -44,7 +44,7 @@ jobs:
           6. Restart Home Assistant
 
           ### Manual Installation
-          1. Download `poi_zones.zip` from the assets below
+          1. Download `automatic_zones.zip` from the assets below
           2. Extract to your `config/custom_components/` directory
           3. Restart Home Assistant
 
@@ -67,7 +67,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: poi_zones.zip
+          files: automatic_zones.zip
           body: ${{ steps.release_notes.outputs.RELEASE_NOTES }}
           draft: false
           prerelease: false
@@ -77,5 +77,5 @@ jobs:
       - name: Update HACS repository file
         run: |
           echo "✅ Release ${{ steps.get_version.outputs.VERSION }} created successfully!"
-          echo "📦 Archive: poi_zones.zip"
+          echo "📦 Archive: automatic_zones.zip"
           echo "🔗 Release URL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ steps.get_version.outputs.VERSION }}"
