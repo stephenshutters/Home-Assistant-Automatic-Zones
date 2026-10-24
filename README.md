@@ -1,16 +1,16 @@
-# POI Zones for Home Assistant
+# Automatic Zones for Home Assistant
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
 
-Automatically create Home Assistant zones for Points of Interest (POIs) near your location using OpenStreetMap data.
+Automatically create Home Assistant zones for Points of Interest (POIs) near your location using [OpenStreetMap](https://www.openstreetmap.org/about) data.
 
 ## Features
 
 - 🏥 **40+ POI Types**: Hospitals, urgent care, schools, restaurants, gas stations, and more
 - 📍 **Automatic Zone Creation**: Creates Home Assistant zones for all discovered POIs
-- 🎯 **Footprint-based Zone Sizing**: each zone is fitted around the OpenStreetMap outline of the building plus its attached parking lot
+- 🎯 **Footprint-Based Zone Sizing**: Each zone is fitted around the OpenStreetMap outline of the building plus its attached parking lot
 - 🧭 **Unambiguous Setup**: city + state + country, or a ZIP / postal code + country
-- 🔀 **Active or Passive Zones**: one switch per entry, changeable any time
+- 🔀 **Active or Passive Zones**: One switch per entry, changeable any time
 - 🔄 **Auto-Updates**: Refreshes POI data weekly
 - 🌍 **OpenStreetMap**: Uses free OpenStreetMap data via Overpass API
 - 🔔 **Automation Ready**: Easily create automations when people enter POI zones
@@ -22,7 +22,7 @@ Automatically create Home Assistant zones for Points of Interest (POIs) near you
 1. Open HACS in Home Assistant
 2. Click the 3 dots in the top right
 3. Select "Custom repositories"
-4. Add this repository URL: `https://github.com/DEADSEC-SECURITY/ha-poi-zones`
+4. Add this repository URL: `https://github.com/stephenshutters/Home-Assistant-Automatic-Zones`
 5. Category: Integration
 6. Click "Install"
 7. Restart Home Assistant
