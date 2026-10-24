@@ -1,7 +1,7 @@
-"""Constants for POI Zones integration."""
+"""Constants for Automatic Zones integration."""
 from typing import Final
 
-DOMAIN: Final = "poi_zones"
+DOMAIN: Final = "automatic_zones"
 
 # ---------------------------------------------------------------------------
 # Configuration keys
