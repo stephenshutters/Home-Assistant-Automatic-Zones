@@ -1,6 +1,6 @@
 {
-  "domain": "poi_zones",
-  "name": "POI Zones",
+  "domain": "automatic_zones",
+  "name": "Automatic Zones",
   "codeowners": [],
   "config_flow": true,
   "dependencies": [
