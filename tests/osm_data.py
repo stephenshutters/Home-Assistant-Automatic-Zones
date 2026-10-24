@@ -1,5 +1,5 @@
 """Builders for synthetic Overpass `out geom` data (metres around an origin)."""
-from custom_components.poi_zones.geometry import unproject
+from custom_components.automatic_zones.geometry import unproject
 
 LAT0, LON0 = 34.0, -84.0
 
