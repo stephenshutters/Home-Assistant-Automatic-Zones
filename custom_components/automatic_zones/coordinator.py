@@ -1,4 +1,4 @@
-"""DataUpdateCoordinator for POI Zones."""
+"""DataUpdateCoordinator for Automatic Zones."""
 from __future__ import annotations
 
 import asyncio
