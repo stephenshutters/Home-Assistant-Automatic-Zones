@@ -7,14 +7,14 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.poi_zones.const import DOMAIN
-from custom_components.poi_zones.osm import OSMConnectionError, Place
+from custom_components.automatic_zones.const import DOMAIN
+from custom_components.automatic_zones.osm import OSMConnectionError, Place
 
 from .osm_data import LAT0, LON0, ll, node, rect, way
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
-OVERPASS = "custom_components.poi_zones.coordinator.async_overpass"
+OVERPASS = "custom_components.automatic_zones.coordinator.async_overpass"
 
 PHASE1 = [
     node(1, 0, 0, name="Starbucks", **{"addr:street": "Holcomb Bridge Rd"}),
@@ -50,7 +50,7 @@ def make_entry(**overrides):
 
 @pytest.fixture(autouse=True)
 def _no_stagger():
-    with patch("custom_components.poi_zones.coordinator.REQUEST_STAGGER_DELAY", 0):
+    with patch("custom_components.automatic_zones.coordinator.REQUEST_STAGGER_DELAY", 0):
         yield
 
 
@@ -232,7 +232,7 @@ async def test_legacy_v1_entry_is_migrated_and_zones_adopted(hass):
     entry.add_to_hass(hass)
     place = Place(LAT0, LON0, "Roswell, Georgia", "Roswell, Georgia", "relation", 1)
     with patch(OVERPASS, side_effect=fake_overpass), patch(
-        "custom_components.poi_zones.async_geocode", AsyncMock(return_value=[place])
+        "custom_components.automatic_zones.async_geocode", AsyncMock(return_value=[place])
     ):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done(wait_background_tasks=True)
