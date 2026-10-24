@@ -16,13 +16,13 @@ jobs:
       - name: Validate manifest
         run: |
           echo "Checking manifest.json..."
-          if [ ! -f "custom_components/poi_zones/manifest.json" ]; then
+          if [ ! -f "custom_components/automatic_zones/manifest.json" ]; then
             echo "❌ manifest.json not found"
             exit 1
           fi
 
           # Validate JSON syntax
-          python3 -c "import json; json.load(open('custom_components/poi_zones/manifest.json'))"
+          python3 -c "import json; json.load(open('custom_components/automatic_zones/manifest.json'))"
           echo "✅ manifest.json is valid"
 
       - name: Validate HACS
@@ -42,12 +42,12 @@ jobs:
           echo "Checking required files..."
 
           required_files=(
-            "custom_components/poi_zones/__init__.py"
-            "custom_components/poi_zones/manifest.json"
-            "custom_components/poi_zones/config_flow.py"
-            "custom_components/poi_zones/const.py"
-            "custom_components/poi_zones/coordinator.py"
-            "custom_components/poi_zones/sensor.py"
+            "custom_components/automatic_zones/__init__.py"
+            "custom_components/automatic_zones/manifest.json"
+            "custom_components/automatic_zones/config_flow.py"
+            "custom_components/automatic_zones/const.py"
+            "custom_components/automatic_zones/coordinator.py"
+            "custom_components/automatic_zones/sensor.py"
             "README.md"
             "LICENSE"
           )
@@ -64,7 +64,7 @@ jobs:
       - name: Validate Python syntax
         run: |
           echo "Checking Python syntax..."
-          python3 -m py_compile custom_components/poi_zones/*.py
+          python3 -m py_compile custom_components/automatic_zones/*.py
           echo "✅ Python syntax is valid"
 
       - name: Check version consistency
@@ -72,7 +72,7 @@ jobs:
           echo "Checking version consistency..."
 
           # Get version from manifest
-          MANIFEST_VERSION=$(python3 -c "import json; print(json.load(open('custom_components/poi_zones/manifest.json'))['version'])")
+          MANIFEST_VERSION=$(python3 -c "import json; print(json.load(open('custom_components/automatic_zones/manifest.json'))['version'])")
           echo "Manifest version: $MANIFEST_VERSION"
 
           # Check if there's a tag for this version
