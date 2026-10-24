@@ -1,8 +1,8 @@
 """Footprint sizing on synthetic OSM data (no Home Assistant needed)."""
 import pytest
 
-from custom_components.poi_zones.geometry import haversine_m
-from custom_components.poi_zones.osm import (
+from custom_components.automatic_zones.geometry import haversine_m
+from custom_components.automatic_zones.osm import (
     build_geometry_query,
     compute_footprints,
     max_radius_for,
