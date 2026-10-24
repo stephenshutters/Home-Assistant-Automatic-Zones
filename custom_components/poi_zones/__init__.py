@@ -2,226 +2,139 @@
 from __future__ import annotations
 
 import logging
-import re
-from typing import Any
+from dataclasses import dataclass
 
-from homeassistant.components import zone
-from homeassistant.config_entries import ConfigEntry
+import voluptuous as vol
+
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.helpers import entity_registry as er
+from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.typing import ConfigType
 
 from .const import (
+    CONF_AUTO_RADIUS,
     CONF_CITY,
-    CONF_POI_TYPE,
-    CONF_SEARCH_RADIUS,
-    CONF_ZONE_PREFIX,
-    CONF_ZONE_RADIUS,
-    DEFAULT_SEARCH_RADIUS,
-    DEFAULT_ZONE_RADIUS,
+    CONF_DISTINGUISH_DUPLICATES,
+    CONF_LATITUDE,
+    CONF_LONGITUDE,
+    CONF_PASSIVE,
+    CONF_PLACE_NAME,
     DOMAIN,
-    POI_TYPES,
 )
 from .coordinator import POIZonesCoordinator
+from .osm import OSMConnectionError, async_geocode
+from .zones import ZoneManager, async_remove_owned_zones
 
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up POI Zones from a config entry."""
-    hass.data.setdefault(DOMAIN, {})
+@dataclass
+class POIZonesData:
+    """Runtime objects of one config entry."""
 
-    city = entry.data[CONF_CITY]
-    poi_type = entry.data[CONF_POI_TYPE]
-    
-    # Get config with options override
-    search_radius = entry.options.get(
-        CONF_SEARCH_RADIUS, entry.data.get(CONF_SEARCH_RADIUS, DEFAULT_SEARCH_RADIUS)
-    )
-    zone_radius = entry.options.get(
-        CONF_ZONE_RADIUS,
-        entry.data.get(CONF_ZONE_RADIUS, POI_TYPES[poi_type]["radius"]),
-    )
+    coordinator: POIZonesCoordinator
+    zones: ZoneManager
 
-    # Create coordinator
-    coordinator = POIZonesCoordinator(
-        hass,
-        city=city,
-        poi_type=poi_type,
-        search_radius=search_radius,
-        zone_radius=zone_radius,
-    )
 
-    # Fetch initial data
-    await coordinator.async_config_entry_first_refresh()
+type POIZonesConfigEntry = ConfigEntry[POIZonesData]
 
-    # Store coordinator
-    hass.data[DOMAIN][entry.entry_id] = {
-        "coordinator": coordinator,
-        "zones_created": [],
-    }
 
-    # Create zones for discovered POIs
-    await _create_zones(hass, entry, coordinator)
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register the refresh service once for the whole integration."""
 
-    # Set up platforms
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    async def handle_refresh(call: ServiceCall) -> None:
+        """Re-query OpenStreetMap now, ignoring all caches."""
+        for entry in hass.config_entries.async_entries(DOMAIN):
+            if entry.state is not ConfigEntryState.LOADED:
+                continue
+            coordinator = entry.runtime_data.coordinator
+            coordinator.force_refresh = True
+            await coordinator.async_refresh()
 
-    # Register update listener
-    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
-
-    # Register services
-    if not hass.services.has_service(DOMAIN, "refresh"):
-        async def handle_refresh(call: ServiceCall) -> None:
-            """Handle refresh service call."""
-            for entry_id, data in hass.data[DOMAIN].items():
-                if "coordinator" in data:
-                    await data["coordinator"].async_refresh()
-
-        hass.services.async_register(DOMAIN, "refresh", handle_refresh)
-
+    hass.services.async_register(DOMAIN, "refresh", handle_refresh, schema=vol.Schema({}))
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
-    # Remove created zones
-    if entry.entry_id in hass.data[DOMAIN]:
-        zone_ids = hass.data[DOMAIN][entry.entry_id].get("zones_created", [])
-        await _remove_zones(hass, zone_ids)
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Upgrade entries created by the original integration (version 1).
 
-    # Unload platforms
-    if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        hass.data[DOMAIN].pop(entry.entry_id, None)
+    They keep behaving as before: active zones, fixed radius. Coordinates are
+    looked up on the first start (see ``_async_ensure_coordinates``).
+    """
+    if entry.version == 1:
+        data = {**entry.data, CONF_PASSIVE: False, CONF_AUTO_RADIUS: False, CONF_DISTINGUISH_DUPLICATES: False}
+        hass.config_entries.async_update_entry(entry, data=data, version=2)
+        _LOGGER.info("Migrated POI Zones entry %s to version 2", entry.title)
+    return True
 
-    return unload_ok
+
+async def _async_ensure_coordinates(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Geocode once for migrated entries that only stored a city string."""
+    if CONF_LATITUDE in entry.data and CONF_LONGITUDE in entry.data:
+        return
+    try:
+        places = await async_geocode(
+            async_get_clientsession(hass),
+            query=entry.data[CONF_CITY],
+            language=hass.config.language,
+            limit=1,
+        )
+    except OSMConnectionError as err:
+        raise ConfigEntryNotReady(f"Could not geocode {entry.data[CONF_CITY]}: {err}") from err
+    if not places:
+        raise ConfigEntryNotReady(f"No geocoding result for {entry.data[CONF_CITY]}")
+    place = places[0]
+    hass.config_entries.async_update_entry(
+        entry,
+        data={
+            **entry.data,
+            CONF_LATITUDE: place.latitude,
+            CONF_LONGITUDE: place.longitude,
+            CONF_PLACE_NAME: place.short_name,
+        },
+    )
 
 
-async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload the config entry."""
+async def async_setup_entry(hass: HomeAssistant, entry: POIZonesConfigEntry) -> bool:
+    """Set up POI Zones from a config entry."""
+    await _async_ensure_coordinates(hass, entry)
+
+    coordinator = POIZonesCoordinator(hass, entry)
+    await coordinator.async_load_store()
+    await coordinator.async_config_entry_first_refresh()
+
+    manager = ZoneManager(hass, entry, coordinator)
+    entry.runtime_data = POIZonesData(coordinator, manager)
+    # Register the listener BEFORE the first sync, with no await in between:
+    # the background footprint task starts during the first refresh and may
+    # publish new radii at any later await. Syncs are serialised by a lock.
+    entry.async_on_unload(coordinator.async_add_listener(manager.async_request_sync))
+    await manager.async_sync()  # zones exist before the sensor reports them
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
+    return True
+
+
+async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-def _slugify(text: str) -> str:
-    """Create a slug from text."""
-    slug = re.sub(r"[^a-z0-9]+", "_", text.lower())
-    slug = slug.strip("_")
-    slug = re.sub(r"_+", "_", slug)
-    return slug[:50]  # Limit length
+async def async_unload_entry(hass: HomeAssistant, entry: POIZonesConfigEntry) -> bool:
+    """Unload. Zones are deliberately kept; see ``async_remove_entry``."""
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok:
+        # Write the cache now so a pending delayed save cannot resurrect the
+        # store file after the entry is deleted.
+        await entry.runtime_data.coordinator.async_flush_store()
+    return unload_ok
 
 
-async def _create_zones(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    coordinator: POIZonesCoordinator,
-) -> None:
-    """Create Home Assistant zones for discovered POIs using zone storage."""
-    if not coordinator.data:
-        return
-
-    pois = coordinator.data.get("pois", [])
-    poi_type = coordinator.poi_type
-    created_zone_ids = []
-
-    # Access zone storage collection
-    if zone.DOMAIN not in hass.data:
-        _LOGGER.warning("Zone integration not loaded, skipping zone creation")
-        return
-
-    # In modern HA, hass.data[zone.DOMAIN] is the ZoneStorageCollection itself
-    storage_collection = hass.data[zone.DOMAIN]
-
-    # Log available methods for debugging
-    _LOGGER.debug(
-        "Zone storage collection type: %s, methods: %s",
-        type(storage_collection),
-        [m for m in dir(storage_collection) if not m.startswith("_") and callable(getattr(storage_collection, m))]
-    )
-
-    # Verify it has the methods we need
-    if not hasattr(storage_collection, "async_create_item"):
-        _LOGGER.warning(
-            "Zone storage collection does not support async_create_item. Type: %s",
-            type(storage_collection)
-        )
-        return
-
-    # Get zone prefix from config
-    zone_prefix = entry.data.get(CONF_ZONE_PREFIX, f"{poi_type}")
-
-    for poi in pois:
-        # Create prefixed zone name (this will be used to generate the entity ID)
-        prefixed_name = f"{zone_prefix}_{poi['name']}"
-
-        # Check if zone already exists (by prefixed name)
-        existing_id = None
-        existing_item = None
-        try:
-            for item in storage_collection.async_items():
-                # Match by prefixed name to find existing POI zones
-                if item.get("name") == prefixed_name:
-                    existing_id = item.get("id")
-                    existing_item = item
-                    break
-        except Exception as err:
-            _LOGGER.debug("Could not check existing zones: %s", err)
-
-        zone_data = {
-            "name": prefixed_name,  # Use prefixed name
-            "latitude": poi["latitude"],
-            "longitude": poi["longitude"],
-            "radius": float(poi["zone_radius"]),
-            "icon": poi["icon"],
-            "passive": False,
-        }
-
-        try:
-            if existing_id:
-                # Update existing zone
-                _LOGGER.debug("Updating zone %s with data: %s", existing_id, zone_data)
-                await storage_collection.async_update_item(existing_id, zone_data)
-                created_zone_ids.append(existing_id)
-                _LOGGER.debug("Updated zone: %s (ID: %s)", poi["name"], existing_id)
-            else:
-                # Create new zone - the collection will assign an ID
-                _LOGGER.debug("Creating new zone with data: %s", zone_data)
-                _LOGGER.debug("Zone data keys: %s", list(zone_data.keys()))
-                result = await storage_collection.async_create_item(zone_data)
-                # Get the ID from the result
-                new_id = result.get("id") if isinstance(result, dict) else None
-                if new_id:
-                    created_zone_ids.append(new_id)
-                    _LOGGER.debug("Created zone: %s (ID: %s)", poi["name"], new_id)
-
-        except Exception as err:
-            _LOGGER.warning("Failed to create/update zone %s: %s", poi["name"], err)
-            _LOGGER.debug("Full error for %s: %s", poi["name"], err, exc_info=True)
-
-    # Store created zone IDs for cleanup
-    hass.data[DOMAIN][entry.entry_id]["zones_created"] = created_zone_ids
-    _LOGGER.info(
-        "Created/updated %d zones for %s in %s",
-        len(created_zone_ids),
-        POI_TYPES[poi_type]["name"],
-        coordinator.city,
-    )
-
-
-async def _remove_zones(hass: HomeAssistant, zone_ids: list[str]) -> None:
-    """Remove zones created by this integration."""
-    # Access zone storage collection
-    if zone.DOMAIN not in hass.data:
-        _LOGGER.debug("Zone integration not loaded, skipping zone cleanup")
-        return
-
-    # In modern HA, hass.data[zone.DOMAIN] is the ZoneStorageCollection itself
-    storage_collection = hass.data[zone.DOMAIN]
-
-    for zone_id in zone_ids:
-        try:
-            await storage_collection.async_delete_item(zone_id)
-            _LOGGER.debug("Removed zone: %s", zone_id)
-        except Exception:
-            _LOGGER.debug("Zone %s already removed or not found", zone_id)
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """The entry was deleted: remove the zones it created."""
+    await async_remove_owned_zones(hass, entry.entry_id)

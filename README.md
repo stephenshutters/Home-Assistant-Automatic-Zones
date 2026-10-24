@@ -8,7 +8,9 @@ Automatically create Home Assistant zones for Points of Interest (POIs) near you
 
 - 🏥 **40+ POI Types**: Hospitals, urgent care, schools, restaurants, gas stations, and more
 - 📍 **Automatic Zone Creation**: Creates Home Assistant zones for all discovered POIs
-- 🎯 **Dynamic Radius Sizing**: Intelligent zone sizing based on facility size (hospitals, urgent care)
+- 🎯 **Footprint-based Zone Sizing**: each zone is fitted around the OpenStreetMap outline of the building plus its attached parking lot
+- 🧭 **Unambiguous Setup**: city + state + country, or a ZIP / postal code + country
+- 🔀 **Active or Passive Zones**: one switch per entry, changeable any time
 - 🔄 **Auto-Updates**: Refreshes POI data weekly
 - 🌍 **OpenStreetMap**: Uses free OpenStreetMap data via Overpass API
 - 🔔 **Automation Ready**: Easily create automations when people enter POI zones
@@ -33,13 +35,36 @@ Automatically create Home Assistant zones for Points of Interest (POIs) near you
 ## Configuration
 
 1. Go to **Settings** → **Devices & Services**
-2. Click **Add Integration**
-3. Search for "POI Zones"
-4. Enter:
-   - **City**: Your city name (e.g., "New York, NY")
-   - **POI Type**: Select from 40+ available types
-   - **Search Radius** (optional): Distance in km to search from city center
-   - **Zone Radius** (optional): Default radius for created zones in meters
+2. Click **Add Integration** and search for "POI Zones"
+3. Choose the **POI type**
+4. Choose how to identify the place:
+   - **City, state and country** (state is optional but recommended - there are dozens of Springfields), or
+   - **ZIP / postal code and country** (a postal code is only unique within a country)
+5. If more than one place matches you are asked to pick the right one
+6. Zone settings:
+
+| Setting | What it does |
+|---|---|
+| **Zone name prefix** (optional) | Empty: zones are named after the place (`Starbucks`). With a prefix: `prefix_Starbucks`. |
+| **Make all zones passive** | See below. |
+| **Size zones from OpenStreetMap footprints** | On by default. See [Zone sizing](#zone-sizing). |
+| **Search radius** | How far from the place to look (default 25 km for a city, 10 km for a ZIP). |
+| **Fallback zone radius** | Used when OpenStreetMap has no outline for a place (or sizing is off). |
+
+Every setting except the location can be changed later under **Configure**. Zones are renamed, resized and switched between active/passive **in place** - they are not recreated, so entity ids and automations keep working.
+
+### Active vs. passive zones
+
+- **Active** zones replace a person's state with the zone's name (e.g. `Starbucks` instead of `not_home`) while they are inside, and the person's location in the UI follows. Good when you want place names as states.
+- **Passive** zones never change a person's state, but zone triggers, zone conditions and the zone's `persons` attribute all still work. Good when you create many zones or want `home`/`not_home` untouched.
+
+With active zones, names are shown verbatim as the person's state, so choose a prefix (or none) deliberately.
+
+### Duplicate names
+
+By default places that share a name keep **exactly that name**: twenty Starbucks are twenty zones all called `Starbucks` (Home Assistant gives them distinct entity ids - `zone.starbucks`, `zone.starbucks_2`, ... - and `zone_entity_ids` on the sensor lists the real ones). With active zones a person standing in any of them has the state `Starbucks`.
+
+Turn on **Tell same-named places apart** to get `Starbucks (Holcomb Bridge Rd)` instead - the street, or the OpenStreetMap id when streets are missing or identical. Uniquely named places are never suffixed. The setting works the same with or without a prefix and can be switched any time; zones are renamed in place.
 
 ## Available POI Types
 
@@ -91,30 +116,38 @@ Automatically create Home Assistant zones for Points of Interest (POIs) near you
 ### Religious
 - Places of Worship
 
-## Dynamic Zone Sizing
+## Zone sizing
 
-For hospitals and urgent care facilities, the integration automatically adjusts zone radius based on:
-- **Number of beds** (if available in OpenStreetMap)
-- **Building footprint** (node/way/relation)
-- **Healthcare type** (hospital vs clinic)
-- **Emergency status**
+HA zones are circles, so for each place the integration computes the **smallest circle that contains the building outline and every attached parking lot**, adds a 20 m margin for GPS jitter, and centres the zone on that circle (so the zone can sit a little off the OSM point, toward the car park).
 
-This ensures small clinics get smaller zones (100-130m) while major medical centers get larger zones (230-280m).
+- The building is the place's own outline, or - if it is mapped as a point - the smallest `building` polygon that contains it.
+- A parking lot (`amenity=parking`) counts as attached if it is within 30 m of that outline. Private/resident/delivery lots and street, underground and garage-box parking are ignored.
+- Radius is rounded up to 5 m, never below 50 m, and never above `max(150 m, 3 x the type's default radius)`. If adding the parking would exceed that cap (shared mall lots) the zone is sized from the building alone.
+- A place with no usable outline (e.g. a point not inside any building) uses the fallback radius. Hospitals and urgent care keep the original bed-count/type heuristic as that fallback.
+- Sizing runs in the **background** after setup (a request per 40 places, at most one every 10 s), so zones first appear with the fallback radius and are resized as results arrive. Results are cached for 30 days. The sensor attributes `zones_sized_from_osm` / `zones_pending_size` show progress; each location lists its `radius_source`.
 
 ## Sensors
 
-Each POI integration creates a sensor entity:
-- **State**: Number of POIs found
-- **Attributes**:
-  - `zone_ids`: List of all zone IDs created
-  - `locations`: Detailed information for each POI
-  - `city`: City name
-  - `poi_type`: Type of POIs
-  - Plus coordinates, names, addresses, phone numbers, websites, etc.
+Each entry creates one sensor.
+
+- **State**: number of places found
+- **Attributes**: `zone_entity_ids`, `zone_names`, `locations` (name, `zone_entity_id`, position, `zone_radius_m`, `radius_source`, address, phone, website, ...), `passive`, `auto_radius`, `zones_sized_from_osm`, `zones_pending_size`, plus `city`/`place`, `poi_type`, `search_radius_km`.
+- `zone_entity_ids` comes from the entity registry, so it is correct even when Home Assistant had to add `_2` to avoid a clash with one of your own zones.
+- The large attributes are excluded from the recorder database (they would exceed its 16 KB limit and cause *all* attributes to be dropped).
+
+## Services
+
+`poi_zones.refresh` - re-query OpenStreetMap now, ignoring caches, and resize zones again.
+
+## Zones you create yourself
+
+The integration tracks the zones it creates by id. It never edits or deletes a zone you made, even if the names match (yours keeps `zone.walmart`, ours becomes `zone.walmart_2`). Unloading, reloading or disabling the entry leaves its zones in place; **deleting the entry removes them**.
 
 ## Example Automations
 
 ### Hospital Visit Notification
+
+(This example relies on **active** zones: it matches a person's state against the zone names. With passive zones use a zone trigger or the zone's `persons` attribute instead.)
 
 Get notified when someone has been at a hospital for over 30 minutes:
 
@@ -127,7 +160,7 @@ automation:
           {% set poi_zones = namespace(ids=[]) %}
           {% for sensor in states.sensor | selectattr('attributes.poi_type', 'defined') %}
             {% if sensor.attributes.poi_type in ['hospital', 'urgent_care'] %}
-              {% set poi_zones.ids = poi_zones.ids + sensor.attributes.zone_ids %}
+              {% set poi_zones.ids = poi_zones.ids + sensor.attributes.zone_names %}
             {% endif %}
           {% endfor %}
           {{ expand(states.person)
@@ -143,7 +176,7 @@ automation:
             {% set poi_zones = namespace(ids=[]) %}
             {% for sensor in states.sensor | selectattr('attributes.poi_type', 'defined') %}
               {% if sensor.attributes.poi_type in ['hospital', 'urgent_care'] %}
-                {% set poi_zones.ids = poi_zones.ids + sensor.attributes.zone_ids %}
+                {% set poi_zones.ids = poi_zones.ids + sensor.attributes.zone_names %}
               {% endif %}
             {% endfor %}
             {% set people_at_facility = expand(states.person)
@@ -175,16 +208,16 @@ automation:
 ## Data Source
 
 This integration uses:
-- **Nominatim** for geocoding city names
+- **Nominatim** (structured search) for geocoding the place you enter
 - **Overpass API** for querying OpenStreetMap POI data
 
-Data is refreshed weekly by default. All data comes from OpenStreetMap contributors and is available under the ODbL license.
+Data is refreshed weekly by default; zone footprints are looked up in the background. All data comes from OpenStreetMap contributors and is available under the ODbL license.
 
 ## Troubleshooting
 
 ### No POIs Found
 
-- Check that the city name is correct (try adding state/country)
+- Check the spelling, or switch to the ZIP / postal-code option
 - Some POI types may not be well-tagged in OpenStreetMap for your area
 - Try increasing the search radius
 
@@ -192,13 +225,18 @@ Data is refreshed weekly by default. All data comes from OpenStreetMap contribut
 
 - Ensure the "Zone" integration is enabled in Home Assistant
 - Check Home Assistant logs for errors
-- Zones are created/updated on integration reload or HA restart
+- Zones are created on setup and re-synced after every refresh
+
+### Zones Never Get Resized
+
+- Sizing needs the Overpass API; check the log for `Footprint lookup failed`. It retries on the next refresh, or run `poi_zones.refresh`.
+- Places with no building outline in OSM keep the fallback radius by design.
 
 ### Wrong Zone Locations
 
 - OpenStreetMap data quality varies by location
 - Building entrances vs centers may cause slight offsets
-- The 30m positioning buffer helps account for this
+- Zones are centred on the building+parking footprint, not the OSM point
 
 ## Contributing
 
@@ -213,3 +251,11 @@ This project is licensed under the MIT License.
 - OpenStreetMap contributors for POI data
 - Nominatim for geocoding
 - Overpass API for OSM queries
+
+## Upgrading from the original integration
+
+Existing entries are migrated automatically and keep their behaviour (active zones, fixed radius, same names). Their zones are adopted by name + position rather than duplicated. Turn on footprint sizing or passive zones under **Configure**. Note that the original deleted its zones whenever an entry was unloaded or reloaded; this version keeps them.
+
+## Development
+
+`pip install -r requirements-test.txt && pytest`

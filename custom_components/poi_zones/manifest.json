@@ -1,11 +1,15 @@
 {
   "domain": "poi_zones",
   "name": "POI Zones",
-  "codeowners": ["@DEADSEC-SECURITY"],
+  "codeowners": [],
   "config_flow": true,
+  "dependencies": [
+    "zone"
+  ],
   "documentation": "https://github.com/DEADSEC-SECURITY/ha-poi-zones",
+  "integration_type": "service",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/DEADSEC-SECURITY/ha-poi-zones/issues",
   "requirements": [],
-  "version": "1.1.1"
+  "version": "2.0.0"
 }

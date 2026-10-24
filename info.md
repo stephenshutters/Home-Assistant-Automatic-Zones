@@ -6,7 +6,9 @@ Automatically create Home Assistant zones for Points of Interest near your locat
 
 - 🏥 **40+ POI Types** from hospitals to restaurants
 - 📍 **Automatic Zones** created in Home Assistant
-- 🎯 **Smart Sizing** for healthcare facilities
+- 🎯 **Zones fitted to the building + parking lot** from OpenStreetMap outlines
+- 🔀 **Active or passive zones**, optional name prefix
+- 🧭 **City/state/country or ZIP** setup
 - 🔄 **Weekly Updates** from OpenStreetMap
 - 🔔 **Ready for Automations**
 

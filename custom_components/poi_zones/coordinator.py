@@ -2,369 +2,324 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import json
 import logging
 import time
 from datetime import timedelta
-from pathlib import Path
 from typing import Any
 
-import aiohttp
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
-    CACHE_TTL,
+    CONF_AUTO_RADIUS,
+    CONF_CITY,
+    CONF_DISTINGUISH_DUPLICATES,
+    CONF_LATITUDE,
+    CONF_LONGITUDE,
+    CONF_PLACE_NAME,
+    CONF_POI_TYPE,
+    CONF_SEARCH_RADIUS,
+    CONF_ZONE_RADIUS,
+    DEFAULT_AUTO_RADIUS,
+    DEFAULT_DISTINGUISH_DUPLICATES,
+    DEFAULT_SEARCH_RADIUS,
     DOMAIN,
-    NOMINATIM_URL,
-    OVERPASS_URL,
+    GEOMETRY_BATCH_SIZE,
+    POI_CACHE_TTL,
     POI_TYPES,
+    RADIUS_ALGORITHM_VERSION,
+    RADIUS_CACHE_TTL,
+    REQUEST_STAGGER_DELAY,
+    STORAGE_VERSION,
     UPDATE_INTERVAL,
+)
+from .geometry import haversine_m
+from .helpers import assign_zone_names, entry_value, zone_prefix
+from .osm import (
+    OSMConnectionError,
+    async_overpass,
+    build_geometry_query,
+    build_poi_query,
+    compute_footprints,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-# Delay between consecutive Overpass API requests to avoid rate limiting
-REQUEST_STAGGER_DELAY = 10  # seconds
+_RATE_KEY = f"{DOMAIN}_overpass_rate"
 
-# Maximum retries for transient Overpass errors (429, 504)
-MAX_RETRIES = 2
-RETRY_DELAY = 30  # seconds
-
-
-def _get_overpass_lock(hass: HomeAssistant) -> asyncio.Lock:
-    """Get or create a shared lock to serialize Overpass API requests."""
-    domain_data = hass.data.setdefault(DOMAIN, {})
-    if "_overpass_lock" not in domain_data:
-        domain_data["_overpass_lock"] = asyncio.Lock()
-    return domain_data["_overpass_lock"]
+# Tags worth keeping in the on-disk cache (keeps the cache file small).
+_KEEP_TAGS = {
+    "name", "phone", "website", "opening_hours", "brand", "operator", "emergency",
+    "beds", "healthcare", "cuisine", "capacity", "building",
+}
+_KEEP_PREFIXES = ("addr:", "contact:", "fuel:", "socket:")
 
 
-class POIZonesCoordinator(DataUpdateCoordinator):
-    """Coordinator to fetch POI data from OpenStreetMap."""
+def _rate_state(hass: HomeAssistant) -> dict[str, Any]:
+    """Process-wide Overpass lock + timestamp of the previous request."""
+    return hass.data.setdefault(_RATE_KEY, {"lock": asyncio.Lock(), "last": 0.0})
 
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        city: str,
-        poi_type: str,
-        search_radius: int,
-        zone_radius: int,
-    ) -> None:
-        """Initialize the coordinator."""
+
+def _trim(element: dict[str, Any]) -> dict[str, Any]:
+    tags = element.get("tags", {})
+    kept = {
+        k: v for k, v in tags.items() if k in _KEEP_TAGS or k.startswith(_KEEP_PREFIXES)
+    }
+    out = {"type": element["type"], "id": element["id"], "tags": kept}
+    if "lat" in element:
+        out["lat"], out["lon"] = element["lat"], element["lon"]
+    if "center" in element:
+        out["center"] = element["center"]
+    return out
+
+
+class POIZonesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+    """Fetches POIs from OpenStreetMap and sizes their zones."""
+
+    config_entry: ConfigEntry
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         super().__init__(
             hass,
             _LOGGER,
-            name=f"{DOMAIN}_{poi_type}_{city}",
+            config_entry=entry,
+            name=f"{DOMAIN}_{entry.entry_id}",
             update_interval=timedelta(seconds=UPDATE_INTERVAL),
         )
-        self.city = city
-        self.poi_type = poi_type
-        self.search_radius = search_radius
-        self.zone_radius = zone_radius
-        self._city_coords: tuple[float, float] | None = None
-        self._cache_dir = Path(hass.config.path(".poi_zones_cache"))
+        self.poi_type: str = entry.data[CONF_POI_TYPE]
+        self.latitude: float = entry.data[CONF_LATITUDE]
+        self.longitude: float = entry.data[CONF_LONGITUDE]
+        self.place_name: str = (
+            entry.data.get(CONF_PLACE_NAME) or entry.data.get(CONF_CITY) or ""
+        )
+        self.force_refresh = False
+        self._store: Store[dict[str, Any]] = Store(
+            hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}"
+        )
+        # pois: raw Overpass elements; radii: footprint results per POI key;
+        # zones: POI key -> id of the zone WE created in the zone collection.
+        self.cache: dict[str, Any] = {"pois": None, "radii": {}, "zones": {}}
+        self._elements: list[dict[str, Any]] = []
+        self._enrich_task: asyncio.Task | None = None
 
-    # ------------------------------------------------------------------
-    # File-based cache helpers
-    # ------------------------------------------------------------------
+    # -- live options -------------------------------------------------------
+    @property
+    def search_radius_km(self) -> int:
+        return int(entry_value(self.config_entry, CONF_SEARCH_RADIUS, DEFAULT_SEARCH_RADIUS))
 
-    def _cache_key(self, prefix: str) -> str:
-        """Generate a deterministic cache filename."""
-        raw = f"{prefix}_{self.city}_{self.poi_type}_{self.search_radius}"
-        return hashlib.sha256(raw.encode()).hexdigest()[:16]
+    @property
+    def fallback_radius(self) -> int:
+        value = entry_value(self.config_entry, CONF_ZONE_RADIUS, None)
+        return int(value) if value else POI_TYPES[self.poi_type]["radius"]
 
-    def _read_cache(self, prefix: str, ttl: int = CACHE_TTL) -> Any | None:
-        """Read cached data if it exists and is younger than *ttl* seconds."""
-        cache_file = self._cache_dir / f"{self._cache_key(prefix)}.json"
-        try:
-            if not cache_file.exists():
-                return None
-            data = json.loads(cache_file.read_text())
-            age = time.time() - data.get("timestamp", 0)
-            if age > ttl:
-                _LOGGER.debug(
-                    "Cache expired for %s/%s (age: %.1fh)",
-                    self.poi_type, self.city, age / 3600,
-                )
-                return None
-            _LOGGER.debug(
-                "Using cached data for %s/%s (age: %.1fh)",
-                self.poi_type, self.city, age / 3600,
-            )
-            return data.get("payload")
-        except (json.JSONDecodeError, OSError) as err:
-            _LOGGER.debug("Cache read error for %s: %s", prefix, err)
-            return None
+    @property
+    def auto_radius(self) -> bool:
+        return bool(entry_value(self.config_entry, CONF_AUTO_RADIUS, DEFAULT_AUTO_RADIUS))
 
-    def _write_cache(self, prefix: str, payload: Any) -> None:
-        """Persist payload to a cache file."""
-        try:
-            self._cache_dir.mkdir(parents=True, exist_ok=True)
-            cache_file = self._cache_dir / f"{self._cache_key(prefix)}.json"
-            cache_file.write_text(json.dumps({
-                "timestamp": time.time(),
-                "city": self.city,
-                "poi_type": self.poi_type,
-                "payload": payload,
-            }))
-        except OSError as err:
-            _LOGGER.debug("Cache write error for %s: %s", prefix, err)
+    # -- persistence --------------------------------------------------------
+    async def async_load_store(self) -> None:
+        if stored := await self._store.async_load():
+            self.cache.update(stored)
+            self.cache.setdefault("radii", {})
+            self.cache.setdefault("zones", {})
 
-    # ------------------------------------------------------------------
-    # Main update
-    # ------------------------------------------------------------------
+    async def async_flush_store(self) -> None:
+        await self._store.async_save(self.cache)
+
+    def schedule_save(self) -> None:
+        self._store.async_delay_save(lambda: self.cache, 5)
+
+    async def async_remove_store(self) -> None:
+        await self._store.async_remove()
+
+    # -- update -------------------------------------------------------------
+    def _signature(self) -> str:
+        return (
+            f"{self.poi_type}|{self.latitude:.5f}|{self.longitude:.5f}|{self.search_radius_km}"
+        )
+
+    async def _rate_limited_overpass(self, query: str) -> list[dict[str, Any]]:
+        """Serialise Overpass requests across all entries, with a pause."""
+        state = _rate_state(self.hass)
+        async with state["lock"]:
+            wait = state["last"] + REQUEST_STAGGER_DELAY - time.monotonic()
+            if wait > 0:
+                await asyncio.sleep(wait)
+            try:
+                return await async_overpass(async_get_clientsession(self.hass), query)
+            finally:
+                state["last"] = time.monotonic()
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch POI data from OpenStreetMap."""
-        try:
-            # First, geocode the city if we haven't already
-            if self._city_coords is None:
-                self._city_coords = await self._geocode_city()
-                if self._city_coords is None:
-                    raise UpdateFailed(f"Could not geocode city: {self.city}")
-
-            # Fetch POIs (uses cache + rate-limited API)
-            pois = await self._fetch_pois()
-
-            _LOGGER.info(
-                "Found %d %s POIs near %s",
-                len(pois),
-                self.poi_type,
-                self.city,
-            )
-
-            return {
-                "city": self.city,
-                "city_lat": self._city_coords[0],
-                "city_lon": self._city_coords[1],
-                "poi_type": self.poi_type,
-                "poi_type_name": POI_TYPES[self.poi_type]["name"],
-                "pois": pois,
-            }
-
-        except aiohttp.ClientError as err:
-            raise UpdateFailed(f"Error communicating with API: {err}") from err
-        except Exception as err:
-            _LOGGER.exception("Unexpected error fetching POI data")
-            raise UpdateFailed(f"Unexpected error: {err}") from err
-
-    # ------------------------------------------------------------------
-    # Geocoding (with disk cache – cities don't move)
-    # ------------------------------------------------------------------
-
-    async def _geocode_city(self) -> tuple[float, float] | None:
-        """Geocode city name to coordinates using Nominatim."""
-        # Check disk cache first (30-day TTL – cities don't move)
-        cached = await self.hass.async_add_executor_job(
-            self._read_cache, "geocode", 30 * 24 * 60 * 60,
-        )
-        if cached is not None:
-            _LOGGER.debug("Using cached geocode for %s", self.city)
-            return (cached["lat"], cached["lon"])
-
-        async with aiohttp.ClientSession() as session:
-            params = {
-                "q": self.city,
-                "format": "json",
-                "limit": 1,
-            }
-            headers = {
-                "User-Agent": "HomeAssistant-POIZones/1.0 (https://github.com/tgoncalves/ha-poi-zones)"
-            }
-
-            async with session.get(
-                NOMINATIM_URL, params=params, headers=headers
-            ) as response:
-                if response.status != 200:
-                    _LOGGER.error("Nominatim API error: %s", response.status)
-                    return None
-
-                data = await response.json()
-                if not data:
-                    _LOGGER.error("No results for city: %s", self.city)
-                    return None
-
-                lat = float(data[0]["lat"])
-                lon = float(data[0]["lon"])
-                _LOGGER.debug("Geocoded %s to (%s, %s)", self.city, lat, lon)
-
-                # Cache the result
-                await self.hass.async_add_executor_job(
-                    self._write_cache, "geocode", {"lat": lat, "lon": lon},
-                )
-                return (lat, lon)
-
-    # ------------------------------------------------------------------
-    # Overpass query building
-    # ------------------------------------------------------------------
-
-    def _build_overpass_query(self) -> str:
-        """Build Overpass QL query for the selected POI type."""
-        poi_config = POI_TYPES[self.poi_type]
-        filters = poi_config["filters"]
-
-        lat, lon = self._city_coords
-        radius_meters = self.search_radius * 1000  # Convert km to meters
-
-        # Build query parts for each filter
-        query_parts = []
-        for f in filters:
-            # Build tag filter string
-            tags = "".join(f'["{k}"="{v}"]' for k, v in f.items())
-
-            # Add queries for nodes, ways, and relations
-            query_parts.append(f'node{tags}(around:{radius_meters},{lat},{lon});')
-            query_parts.append(f'way{tags}(around:{radius_meters},{lat},{lon});')
-            query_parts.append(f'relation{tags}(around:{radius_meters},{lat},{lon});')
-
-        query = f"""
-        [out:json][timeout:30];
-        (
-            {"".join(query_parts)}
-        );
-        out center;
-        """
-
-        _LOGGER.debug("Overpass query: %s", query)
-        return query
-
-    # ------------------------------------------------------------------
-    # POI fetching with cache, rate limiting, and retry
-    # ------------------------------------------------------------------
-
-    async def _fetch_pois(self) -> list[dict[str, Any]]:
-        """Fetch POIs with disk caching and serialized API access."""
-        # 1. Try the disk cache first (avoids API call entirely)
-        cached_elements = await self.hass.async_add_executor_job(
-            self._read_cache, "overpass",
-        )
-        if cached_elements is not None:
-            return self._process_elements(cached_elements)
-
-        # 2. Cache miss – need to call the Overpass API.
-        #    Acquire a shared lock so only one request runs at a time,
-        #    with a stagger delay between consecutive requests.
-        lock = _get_overpass_lock(self.hass)
-        query = self._build_overpass_query()
-
-        async with lock:
-            # Re-check cache: another coordinator may have warmed it while
-            # we were waiting for the lock (won't help us, but cheap check).
-            cached_elements = await self.hass.async_add_executor_job(
-                self._read_cache, "overpass",
-            )
-            if cached_elements is not None:
-                return self._process_elements(cached_elements)
-
-            elements = await self._call_overpass_api(query)
-
-            # Stagger delay – keep the lock held so the next coordinator
-            # waits before hitting the API.
-            _LOGGER.debug(
-                "Staggering next Overpass request by %ds", REQUEST_STAGGER_DELAY,
-            )
-            await asyncio.sleep(REQUEST_STAGGER_DELAY)
-
-        # 3. Cache the raw elements for next time
-        await self.hass.async_add_executor_job(
-            self._write_cache, "overpass", elements,
+        sig = self._signature()
+        cached = self.cache.get("pois")
+        fresh = (
+            cached
+            and cached.get("sig") == sig
+            and time.time() - cached.get("ts", 0) < POI_CACHE_TTL
+            and not self.force_refresh
         )
 
-        return self._process_elements(elements)
+        if self.force_refresh:
+            if self._enrich_task and not self._enrich_task.done():
+                self._enrich_task.cancel()
+            self.cache["radii"] = {}
 
-    async def _call_overpass_api(self, query: str) -> list[dict]:
-        """Call the Overpass API with retry on transient errors (429/504)."""
-        last_error: Exception | None = None
-
-        for attempt in range(1, MAX_RETRIES + 1):
+        if fresh:
+            self._elements = cached["elements"]
+        else:
+            poi_config = POI_TYPES[self.poi_type]
+            query = build_poi_query(
+                poi_config["filters"],
+                self.latitude,
+                self.longitude,
+                self.search_radius_km * 1000,
+            )
             try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(
-                        OVERPASS_URL,
-                        data={"data": query},
-                        headers={"User-Agent": "HomeAssistant-POIZones/1.0"},
-                    ) as response:
-                        if response.status == 200:
-                            data = await response.json()
-                            return data.get("elements", [])
+                raw = await self._rate_limited_overpass(query)
+            except OSMConnectionError as err:
+                if cached and cached.get("sig") == sig:
+                    _LOGGER.warning("Overpass unavailable (%s); using the previous POI list", err)
+                    self._elements = cached["elements"]
+                else:
+                    raise UpdateFailed(f"Could not fetch POIs from OpenStreetMap: {err}") from err
+            else:
+                self._elements = [_trim(e) for e in raw if "type" in e and "id" in e]
+                self.cache["pois"] = {"sig": sig, "ts": time.time(), "elements": self._elements}
+                self.schedule_save()
 
-                        text = await response.text()
-                        if response.status in (429, 504) and attempt < MAX_RETRIES:
-                            _LOGGER.warning(
-                                "Overpass API returned %s for %s/%s "
-                                "(attempt %d/%d), retrying in %ds",
-                                response.status,
-                                self.poi_type,
-                                self.city,
-                                attempt,
-                                MAX_RETRIES,
-                                RETRY_DELAY,
-                            )
-                            await asyncio.sleep(RETRY_DELAY)
-                            continue
+        self.force_refresh = False
+        data = self._build_data()
+        # Forget footprints of POIs that no longer exist.
+        if data["pois"]:
+            live = {p["key"] for p in data["pois"]}
+            self.cache["radii"] = {k: v for k, v in self.cache["radii"].items() if k in live}
+            self.schedule_save()
+        self._schedule_enrichment()
+        return data
 
-                        raise UpdateFailed(
-                            f"Overpass API error {response.status}: {text}"
-                        )
-            except aiohttp.ClientError as err:
-                last_error = err
-                if attempt < MAX_RETRIES:
-                    _LOGGER.warning(
-                        "Overpass request failed for %s/%s (attempt %d/%d): %s",
-                        self.poi_type, self.city, attempt, MAX_RETRIES, err,
-                    )
-                    await asyncio.sleep(RETRY_DELAY)
+    # -- building the data the rest of the integration uses ----------------
+    def _radius_entry(self, key: str) -> dict[str, Any] | None:
+        entry = self.cache["radii"].get(key)
+        if (
+            entry
+            and entry.get("v") == RADIUS_ALGORITHM_VERSION
+            and time.time() - entry.get("ts", 0) < RADIUS_CACHE_TTL
+        ):
+            return entry
+        return None
+
+    def _build_data(self) -> dict[str, Any]:
+        pois = self._process_elements(self._elements)
+        pending = 0
+        for poi in pois:
+            footprint = self._radius_entry(poi["key"]) if self.auto_radius else None
+            if footprint and footprint.get("radius"):
+                poi["zone_radius"] = footprint["radius"]
+                poi["zone_latitude"] = footprint["latitude"]
+                poi["zone_longitude"] = footprint["longitude"]
+                poi["radius_source"] = "osm_footprint"
+                poi["parking_lots"] = footprint.get("parking", 0)
+            elif not self.auto_radius:
+                poi["radius_source"] = "fixed"
+            elif footprint:
+                poi["radius_source"] = "default_no_footprint"
+            else:
+                poi["radius_source"] = "pending"
+                pending += 1
+        assign_zone_names(
+            pois,
+            zone_prefix(self.config_entry),
+            bool(
+                entry_value(
+                    self.config_entry, CONF_DISTINGUISH_DUPLICATES, DEFAULT_DISTINGUISH_DUPLICATES
+                )
+            ),
+        )
+        return {
+            "place": self.place_name,
+            "latitude": self.latitude,
+            "longitude": self.longitude,
+            "poi_type": self.poi_type,
+            "poi_type_name": POI_TYPES[self.poi_type]["name"],
+            "pois": pois,
+            "pending_radius": pending,
+        }
+
+    # -- phase 2: footprint sizing (background) -----------------------------
+    def _schedule_enrichment(self) -> None:
+        if not self.auto_radius:
+            return
+        if self._enrich_task and not self._enrich_task.done():
+            return
+        self._enrich_task = self.config_entry.async_create_background_task(
+            self.hass, self._async_enrich(), f"{DOMAIN}_footprints_{self.config_entry.entry_id}"
+        )
+
+    async def _async_enrich(self) -> None:
+        """Look up building/parking footprints in batches and resize zones."""
+        try:
+            pending = [
+                p["key"] for p in self._process_elements(self._elements)
+                if self._radius_entry(p["key"]) is None
+            ]
+            if not pending:
+                return
+            _LOGGER.debug("Sizing %d %s zones from OSM footprints", len(pending), self.poi_type)
+            default_radius = POI_TYPES[self.poi_type]["radius"]
+            failures = 0
+            for i in range(0, len(pending), GEOMETRY_BATCH_SIZE):
+                batch = pending[i : i + GEOMETRY_BATCH_SIZE]
+                try:
+                    elements = await self._rate_limited_overpass(build_geometry_query(batch))
+                except OSMConnectionError as err:
+                    failures += 1
+                    _LOGGER.warning("Footprint lookup failed (%s); will retry on next refresh", err)
+                    if failures >= 2:
+                        break
                     continue
-                raise
+                results = await self.hass.async_add_executor_job(
+                    compute_footprints, elements, batch, default_radius
+                )
+                now = time.time()
+                for key in batch:
+                    entry: dict[str, Any] = {"v": RADIUS_ALGORITHM_VERSION, "ts": now}
+                    entry.update(results.get(key) or {"radius": None})
+                    self.cache["radii"][key] = entry
+                self.schedule_save()
+                self.async_set_updated_data(self._build_data())
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - background task must never crash HA
+            _LOGGER.exception("Unexpected error while sizing zones from footprints")
 
-        # Should not reach here, but just in case
-        raise UpdateFailed(f"Overpass API failed after {MAX_RETRIES} attempts: {last_error}")
-
-    # ------------------------------------------------------------------
-    # Process raw Overpass elements into POI dicts
-    # ------------------------------------------------------------------
-
-    def _process_elements(self, elements: list[dict]) -> list[dict[str, Any]]:
-        """Turn raw Overpass elements into a deduplicated, sorted POI list."""
+    # -- phase 1 processing -------------------------------------------------
+    def _process_elements(self, elements: list[dict[str, Any]]) -> list[dict[str, Any]]:
         poi_config = POI_TYPES[self.poi_type]
-        pois = []
-        seen_locations: set[tuple[float, float]] = set()
-
+        pois: list[dict[str, Any]] = []
         for element in elements:
-            # Get coordinates (center for ways/relations)
             if element["type"] == "node":
-                lat = element["lat"]
-                lon = element["lon"]
-            elif "center" in element:
-                lat = element["center"]["lat"]
-                lon = element["center"]["lon"]
+                lat, lon = element.get("lat"), element.get("lon")
             else:
+                center = element.get("center") or {}
+                lat, lon = center.get("lat"), center.get("lon")
+            if lat is None or lon is None:
                 continue
-
-            # Deduplicate by location (round to ~50m precision)
-            location_key = (round(lat, 4), round(lon, 4))
-            if location_key in seen_locations:
-                continue
-            seen_locations.add(location_key)
-
             tags = element.get("tags", {})
-            name = tags.get("name")
-
-            # Skip unnamed POIs
-            if not name:
+            name = (tags.get("name") or "").strip()
+            if not name:  # unnamed POIs make useless zones
                 continue
 
-            # Calculate dynamic radius based on facility size if applicable
             if self.poi_type in ("hospital", "urgent_care"):
-                calculated_radius = self._calculate_hospital_radius(element, tags)
+                radius = self._calculate_hospital_radius(element, tags)
             else:
-                calculated_radius = self.zone_radius or poi_config["radius"]
+                radius = self.fallback_radius
 
-            # Build POI entry
-            poi = {
-                "id": f"{element['type']}_{element['id']}",
+            poi: dict[str, Any] = {
+                "key": f"{element['type']}/{element['id']}",
                 "osm_type": element["type"],
                 "osm_id": element["id"],
                 "name": name,
@@ -373,66 +328,68 @@ class POIZonesCoordinator(DataUpdateCoordinator):
                 "poi_type": self.poi_type,
                 "poi_type_name": poi_config["name"],
                 "icon": poi_config["icon"],
-                "zone_radius": calculated_radius,
+                "zone_radius": radius,
+                "radius_source": "fixed",
             }
-
-            # Add optional tags
+            if street := tags.get("addr:street"):
+                poi["street"] = street
             if addr := self._build_address(tags):
                 poi["address"] = addr
             if phone := tags.get("phone") or tags.get("contact:phone"):
                 poi["phone"] = phone
             if website := tags.get("website") or tags.get("contact:website"):
                 poi["website"] = website
-            if opening_hours := tags.get("opening_hours"):
-                poi["opening_hours"] = opening_hours
-            if brand := tags.get("brand"):
-                poi["brand"] = brand
-            if operator := tags.get("operator"):
-                poi["operator"] = operator
-
-            # Add type-specific attributes
-            if self.poi_type.startswith("hospital") or self.poi_type == "urgent_care":
+            for tag in ("opening_hours", "brand", "operator"):
+                if value := tags.get(tag):
+                    poi[tag] = value
+            if self.poi_type in ("hospital", "urgent_care"):
                 poi["emergency"] = tags.get("emergency") == "yes"
             if self.poi_type == "ev_charging":
                 poi["capacity"] = tags.get("capacity")
-                poi["socket_types"] = tags.get("socket:type2") or tags.get("socket:ccs") or tags.get("socket:chademo")
             if self.poi_type in ("restaurant", "fast_food", "cafe"):
                 poi["cuisine"] = tags.get("cuisine")
             if self.poi_type == "gas_station":
-                poi["brand"] = tags.get("brand")
                 poi["fuel_types"] = self._get_fuel_types(tags)
-
             pois.append(poi)
 
-        # Sort by name
-        pois.sort(key=lambda x: x["name"])
+        pois = self._dedupe(pois)
+        pois.sort(key=lambda p: (p["name"].casefold(), p["key"]))
         return pois
 
-    # ------------------------------------------------------------------
-    # Helpers (unchanged)
-    # ------------------------------------------------------------------
+    @staticmethod
+    def _dedupe(pois: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Drop the same facility mapped twice (e.g. a node inside its own way).
 
-    def _build_address(self, tags: dict) -> str | None:
-        """Build address string from OSM tags."""
+        The original rounded coordinates to ~11 m and kept the first hit, which
+        also discarded *different* businesses that sit side by side. Here two
+        POIs only collapse if they have the same name and are within 75 m;
+        the area (way/relation) wins over the point.
+        """
+        by_name: dict[str, list[dict[str, Any]]] = {}
+        for poi in sorted(pois, key=lambda p: p["osm_type"] == "node"):
+            kept = by_name.setdefault(poi["name"].casefold(), [])
+            if any(
+                haversine_m((k["latitude"], k["longitude"]), (poi["latitude"], poi["longitude"])) < 75
+                for k in kept
+            ):
+                continue
+            kept.append(poi)
+        return [p for group in by_name.values() for p in group]
+
+    @staticmethod
+    def _build_address(tags: dict[str, str]) -> str | None:
         parts = []
         if street := tags.get("addr:street"):
-            if housenumber := tags.get("addr:housenumber"):
-                parts.append(f"{housenumber} {street}")
-            else:
-                parts.append(street)
-        if city := tags.get("addr:city"):
-            parts.append(city)
-        if state := tags.get("addr:state"):
-            parts.append(state)
-        if postcode := tags.get("addr:postcode"):
-            parts.append(postcode)
-
+            number = tags.get("addr:housenumber")
+            parts.append(f"{number} {street}" if number else street)
+        for key in ("addr:city", "addr:state", "addr:postcode"):
+            if value := tags.get(key):
+                parts.append(value)
         return ", ".join(parts) if parts else None
 
-    def _get_fuel_types(self, tags: dict) -> list[str]:
-        """Extract fuel types from gas station tags."""
-        fuels = []
-        fuel_mapping = {
+    @staticmethod
+    def _get_fuel_types(tags: dict[str, str]) -> list[str]:
+        mapping = {
             "fuel:diesel": "Diesel",
             "fuel:octane_87": "Regular",
             "fuel:octane_89": "Mid-Grade",
@@ -440,64 +397,36 @@ class POIZonesCoordinator(DataUpdateCoordinator):
             "fuel:octane_93": "Premium",
             "fuel:e85": "E85",
         }
-        for tag, name in fuel_mapping.items():
-            if tags.get(tag) == "yes":
-                fuels.append(name)
-        return fuels
+        return [name for tag, name in mapping.items() if tags.get(tag) == "yes"]
 
-    def _calculate_hospital_radius(self, element: dict, tags: dict) -> int:
-        """Calculate zone radius based on healthcare facility size indicators.
+    def _calculate_hospital_radius(self, element: dict[str, Any], tags: dict[str, str]) -> int:
+        """Heuristic size for hospitals/urgent care when no footprint is known.
 
-        Used for hospitals and urgent care facilities.
-        Uses multiple factors to determine appropriate radius:
-        - Number of beds (if available)
-        - OSM element type (node/way/relation)
-        - Healthcare type tags
-        - Emergency status
-
-        Returns radius in meters.
+        Unchanged from the original integration; it is now only the fallback
+        for when OSM has no building outline for the facility.
         """
-        base_radius = self.zone_radius or POI_TYPES[self.poi_type]["radius"]
-
-        # Buffer to account for OSM positioning variations (entrance vs center)
-        # This ensures zones cover the entire building even if the point is slightly off
-        positioning_buffer = 30  # meters
-
-        # Check for explicit bed count (most reliable indicator)
+        base_radius = self.fallback_radius
+        buffer = 30
         if beds_str := tags.get("beds"):
             try:
                 beds = int(beds_str)
-                # Scale radius based on bed count (with buffer)
-                if beds < 50:
-                    return 100 + positioning_buffer  # Small clinic/hospital
-                elif beds < 150:
-                    return 150 + positioning_buffer  # Medium hospital
-                elif beds < 300:
-                    return 200 + positioning_buffer  # Large hospital
-                else:
-                    return 250 + positioning_buffer  # Major medical center
             except ValueError:
-                pass  # Fall through to other methods
-
-        # Check healthcare type for clinics vs hospitals
-        healthcare = tags.get("healthcare", "")
-        if healthcare in ("clinic", "doctor", "dentist"):
-            return 75 + positioning_buffer  # Small medical facility
-
-        # Use OSM element type as size proxy
-        element_type = element.get("type")
-        if element_type == "node":
-            # Point features are typically smaller clinics
-            return 100 + positioning_buffer
-        elif element_type == "relation":
-            # Relations are typically large hospital complexes
-            return min(250 + positioning_buffer, base_radius + positioning_buffer)
-        elif element_type == "way":
-            # Ways are buildings - add extra buffer since point might be at entrance
-            # Check if it's marked as emergency
-            if tags.get("emergency") == "yes":
-                return 200 + positioning_buffer  # Emergency hospitals tend to be larger
-            return 150 + positioning_buffer
-
-        # Default to configured radius with buffer
-        return base_radius + positioning_buffer
+                beds = None
+            if beds is not None:
+                if beds < 50:
+                    return 100 + buffer
+                if beds < 150:
+                    return 150 + buffer
+                if beds < 300:
+                    return 200 + buffer
+                return 250 + buffer
+        if tags.get("healthcare", "") in ("clinic", "doctor", "dentist"):
+            return 75 + buffer
+        kind = element.get("type")
+        if kind == "node":
+            return 100 + buffer
+        if kind == "relation":
+            return min(250 + buffer, base_radius + buffer)
+        if kind == "way":
+            return (200 if tags.get("emergency") == "yes" else 150) + buffer
+        return base_radius + buffer
