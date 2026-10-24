@@ -1,4 +1,4 @@
-"""Config flow for POI Zones.
+"""Config flow for Automatic Zones.
 
 Setup steps:  POI type -> (menu) city/state/country OR ZIP/postal code
               -> pick the right place if several match -> zone settings.
