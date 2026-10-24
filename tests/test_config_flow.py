@@ -5,16 +5,16 @@ import pytest
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResultType
 
-from custom_components.poi_zones.const import DOMAIN
-from custom_components.poi_zones.osm import OSMConnectionError, Place
+from custom_components.automatic_zones.const import DOMAIN
+from custom_components.automatic_zones.osm import OSMConnectionError, Place
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
 ROSWELL = Place(34.0232, -84.3616, "Roswell, Fulton County, Georgia, United States", "Roswell, Georgia", "relation", 111)
 ROSWELL_NM = Place(33.39, -104.52, "Roswell, Chaves County, New Mexico, United States", "Roswell, New Mexico", "relation", 222)
 
-GEOCODE = "custom_components.poi_zones.config_flow.async_geocode"
-SETUP = "custom_components.poi_zones.async_setup_entry"
+GEOCODE = "custom_components.automatic_zones.config_flow.async_geocode"
+SETUP = "custom_components.automatic_zones.async_setup_entry"
 
 
 async def _to_location_menu(hass):
