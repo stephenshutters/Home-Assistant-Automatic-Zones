@@ -1,0 +1,70 @@
+name: Auto Release
+
+# Creates a GitHub release (tag + notes + zip) whenever the version in
+# manifest.json has no release yet. Bump the version and add a matching
+# "## [x.y.z]" section to CHANGELOG.md, push to main, and this does the rest.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "custom_components/automatic_zones/manifest.json"
+      - ".github/workflows/auto-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read version
+        id: v
+        run: |
+          VERSION=$(python3 -c "import json; print(json.load(open('custom_components/automatic_zones/manifest.json'))['version'])")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check whether the release already exists
+        id: exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ steps.v.outputs.tag }}" >/dev/null 2>&1; then
+            echo "Release ${{ steps.v.outputs.tag }} already exists - nothing to do."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build zip and release notes
+        if: steps.exists.outputs.exists == 'false'
+        run: |
+          (cd custom_components/automatic_zones && zip -r ../../automatic_zones.zip . -x "__pycache__/*" "*.pyc")
+          awk -v ver="${{ steps.v.outputs.version }}" '
+            $0 ~ "^## \\[" ver "\\]" {found=1; next}
+            found && /^## \[/ {exit}
+            found {print}
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)." > notes.md
+          fi
+          {
+            echo
+            echo "---"
+            echo "Install or update through HACS (custom repository), then restart Home Assistant."
+          } >> notes.md
+
+      - name: Create release
+        if: steps.exists.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.v.outputs.tag }}" automatic_zones.zip \
+            --target "${{ github.sha }}" \
+            --title "${{ steps.v.outputs.tag }}" \
+            --notes-file notes.md
