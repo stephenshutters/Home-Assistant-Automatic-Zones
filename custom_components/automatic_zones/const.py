@@ -23,6 +23,8 @@ CONF_ZONE_PREFIX: Final = "zone_prefix"  # optional
 CONF_PASSIVE: Final = "passive"
 CONF_AUTO_RADIUS: Final = "auto_radius"
 CONF_DISTINGUISH_DUPLICATES: Final = "distinguish_duplicates"
+CONF_LABEL: Final = "label"  # id of an existing HA label to put on every zone
+CONF_NEW_LABEL: Final = "new_label"  # name of a label to create/reuse (wins over CONF_LABEL)
 CONF_SEARCH_RADIUS: Final = "search_radius"  # km around the resolved location
 CONF_ZONE_RADIUS: Final = "zone_radius"  # m, fallback when no OSM footprint
 

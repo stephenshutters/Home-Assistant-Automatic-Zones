@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-11-20
+
+### Added
+- **Optional label for the zones** (setup and options): pick an existing Home Assistant label, or type a name to create one (reused if it already exists; the typed name wins). It is put on every zone entity of the entry, including zones added later. Changing or clearing it removes only the label this integration added; labels you add by hand are left alone.
+
 ## [2.0.1] - 2026-11-20
 
 ### Changed

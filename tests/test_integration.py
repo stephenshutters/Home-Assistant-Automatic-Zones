@@ -312,3 +312,84 @@ async def test_many_identical_names(hass):
     custom = [z for z in zones(hass).values() if z["name"] != "Home"]
     assert len(custom) == 20 and {z["name"] for z in custom} == {"Starbucks"}
 
+
+
+# -- labels -----------------------------------------------------------------
+def zone_labels(hass):
+    reg = er.async_get(hass)
+    out = {}
+    for z in zones(hass).values():
+        eid = reg.async_get_entity_id("zone", "zone", z["id"])
+        out[z["name"]] = set(reg.async_get(eid).labels) if eid else None
+    return out
+
+
+async def _options(hass, entry, **over):
+    base = {"passive": False, "distinguish_duplicates": True, "auto_radius": True,
+            "search_radius": 25, "zone_radius": 75}
+    base.update(over)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    with patch(OVERPASS, side_effect=fake_overpass):
+        await hass.config_entries.options.async_configure(result["flow_id"], base)
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+
+async def test_no_label_by_default(hass):
+    entry = make_entry()
+    await _setup(hass, entry)
+    assert all(v == set() for v in zone_labels(hass).values())
+
+
+async def test_existing_label_is_applied(hass):
+    from homeassistant.helpers import label_registry as lr
+    assert await async_setup_component(hass, "zone", {})
+    label = lr.async_get(hass).async_create("Shopping")
+    entry = make_entry(label=label.label_id)
+    await _setup(hass, entry)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    labels = zone_labels(hass)
+    assert len(labels) == 3
+    assert all(v == {label.label_id} for v in labels.values())
+
+
+async def test_new_label_is_created_reused_and_wins(hass):
+    from homeassistant.helpers import label_registry as lr
+    assert await async_setup_component(hass, "zone", {})
+    other = lr.async_get(hass).async_create("Other")
+    entry = make_entry(label=other.label_id, new_label="Auto Zones")
+    await _setup(hass, entry)
+    created = lr.async_get(hass).async_get_label_by_name("Auto Zones")
+    assert created is not None
+    assert all(v == {created.label_id} for v in zone_labels(hass).values())
+    # Reload: the same label is reused, not duplicated.
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert len([l for l in lr.async_get(hass).async_list_labels() if l.name == "Auto Zones"]) == 1
+
+
+async def test_changing_and_clearing_label_only_touches_our_label(hass):
+    from homeassistant.helpers import label_registry as lr
+    assert await async_setup_component(hass, "zone", {})
+    reg = lr.async_get(hass)
+    a, b, mine = reg.async_create("A"), reg.async_create("B"), reg.async_create("Mine")
+    entry = make_entry(label=a.label_id)
+    await _setup(hass, entry)
+    ent = er.async_get(hass)
+    cafe = ent.async_get_entity_id("zone", "zone", by_name(hass, "Cafe Solo")["id"])
+    ent.async_update_entity(cafe, labels=set(ent.async_get(cafe).labels) | {mine.label_id})
+
+    await _options(hass, entry, label=b.label_id)
+    labels = zone_labels(hass)
+    assert labels["Cafe Solo"] == {b.label_id, mine.label_id}  # A swapped for B, hand label kept
+    assert all(b.label_id in v and a.label_id not in v for v in labels.values())
+
+    await _options(hass, entry)  # cleared
+    labels = zone_labels(hass)
+    assert labels["Cafe Solo"] == {mine.label_id}
+    assert labels["Starbucks (Holcomb Bridge Rd)"] == set()
+
+
+async def test_deleted_label_id_is_ignored(hass):
+    entry = make_entry(label="does_not_exist")
+    await _setup(hass, entry)
+    assert all(v == set() for v in zone_labels(hass).values())

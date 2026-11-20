@@ -19,10 +19,19 @@ from typing import Any
 from homeassistant.components import zone
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import label_registry as lr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.storage import Store
 
-from .const import CONF_PASSIVE, DEFAULT_PASSIVE, DOMAIN, SIGNAL_ZONES_SYNCED, STORAGE_VERSION
+from .const import (
+    CONF_LABEL,
+    CONF_NEW_LABEL,
+    CONF_PASSIVE,
+    DEFAULT_PASSIVE,
+    DOMAIN,
+    SIGNAL_ZONES_SYNCED,
+    STORAGE_VERSION,
+)
 from .coordinator import POIZonesCoordinator
 from .helpers import entry_value
 
@@ -30,6 +39,7 @@ _LOGGER = logging.getLogger(__name__)
 
 _COORD_TOLERANCE = 1e-6  # degrees (~0.1 m)
 _ADOPT_TOLERANCE = 1e-5  # degrees (~1 m)
+_LABEL_RETRIES = 5  # new zone entities register a moment after the zone is created
 
 
 def get_zone_collection(hass: HomeAssistant) -> Any | None:
@@ -143,12 +153,64 @@ class ZoneManager:
                 if await self._delete(collection, owned.pop(key)):
                     removed += 1
 
+        await self._async_apply_label()
+
         self.coordinator.schedule_save()
         if created or updated or adopted or removed:
             _LOGGER.info(
                 "%s (%s): %d created, %d updated, %d adopted, %d removed",
                 data["poi_type_name"], data["place"], created, updated, adopted, removed,
             )
+
+    def _wanted_label_id(self) -> str | None:
+        """Label id from the options: a typed name (created if needed) wins."""
+        registry = lr.async_get(self.hass)
+        new_name = str(entry_value(self.entry, CONF_NEW_LABEL, "") or "").strip()
+        if new_name:
+            if existing := registry.async_get_label_by_name(new_name):
+                return existing.label_id
+            return registry.async_create(new_name).label_id
+        label_id = str(entry_value(self.entry, CONF_LABEL, "") or "")
+        if label_id and registry.async_get_label(label_id):
+            return label_id
+        return None
+
+    async def _async_apply_label(self) -> None:
+        """Put the chosen label on every owned zone; take back a label we added.
+
+        Only the label this entry added earlier is ever removed (it is
+        remembered in the cache); labels you add by hand are never touched. A
+        label removed by hand from one zone is put back on the next sync.
+        """
+        wanted = self._wanted_label_id()
+        previous = self.coordinator.cache.get("label")
+        if wanted is None and previous is None:
+            return
+        ent_reg = er.async_get(self.hass)
+        pending = list(self.owned)
+        for attempt in range(_LABEL_RETRIES):
+            missing = []
+            for key in pending:
+                entity_id = self.entity_id_for(key)
+                reg_entry = ent_reg.async_get(entity_id) if entity_id else None
+                if reg_entry is None:
+                    missing.append(key)
+                    continue
+                labels = set(reg_entry.labels)
+                new_labels = set(labels)
+                if previous and previous != wanted:
+                    new_labels.discard(previous)
+                if wanted:
+                    new_labels.add(wanted)
+                if new_labels != labels:
+                    ent_reg.async_update_entity(entity_id, labels=new_labels)
+            pending = missing
+            if not pending or attempt == _LABEL_RETRIES - 1:
+                break
+            await asyncio.sleep(1)
+        if pending:
+            _LOGGER.debug("No entity yet for %d zone(s); label applied on next sync", len(pending))
+        self.coordinator.cache["label"] = wanted
 
     @staticmethod
     def _find_adoptable(

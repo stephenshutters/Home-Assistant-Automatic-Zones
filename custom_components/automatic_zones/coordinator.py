@@ -101,7 +101,7 @@ class POIZonesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         # pois: raw Overpass elements; radii: footprint results per POI key;
         # zones: POI key -> id of the zone WE created in the zone collection.
-        self.cache: dict[str, Any] = {"pois": None, "radii": {}, "zones": {}}
+        self.cache: dict[str, Any] = {"pois": None, "radii": {}, "zones": {}, "label": None}
         self._elements: list[dict[str, Any]] = []
         self._enrich_task: asyncio.Task | None = None
 
@@ -125,6 +125,7 @@ class POIZonesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.cache.update(stored)
             self.cache.setdefault("radii", {})
             self.cache.setdefault("zones", {})
+            self.cache.setdefault("label", None)
 
     async def async_flush_store(self) -> None:
         await self._store.async_save(self.cache)

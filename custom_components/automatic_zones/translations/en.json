@@ -45,6 +45,8 @@
         "description": "Creating **{poi_type}** zones around **{place}**.\n\n**Active zones** replace a person's state with the zone's name (for example `Starbucks` instead of `not_home`) while they are inside, and the person's location in the UI follows. **Passive zones** never change a person's state, but zone triggers, zone conditions and the zone's `persons` list still work. Choose passive if you create many zones or don't want place names to replace `home`/`not_home`.",
         "data": {
           "zone_prefix": "Zone name prefix (optional)",
+          "label": "Label for the zones (optional)",
+          "new_label": "Or create a new label (optional)",
           "passive": "Make all zones passive",
           "distinguish_duplicates": "Tell same-named places apart",
           "auto_radius": "Size zones from OpenStreetMap footprints",
@@ -53,6 +55,8 @@
         },
         "data_description": {
           "zone_prefix": "Leave empty to name each zone after the place itself (e.g. `Starbucks`). With a prefix, zones are named `prefix_Name`.",
+          "label": "Pick an existing Home Assistant label to put on every zone created by this entry.",
+          "new_label": "Type a name to create a new label (or reuse one with that name). If filled in, it is used instead of the label picked above.",
           "passive": "Off: active zones (a person's state becomes the zone name). On: passive zones (a person's state is never changed).",
           "auto_radius": "Fit each zone around the building and its attached parking lot using OpenStreetMap outlines. Sizing runs in the background after setup.",
           "search_radius": "How far from the location above to look for places.",
@@ -78,6 +82,8 @@
         "description": "Zones around **{place}**. Changes rename and resize the existing zones; they are not recreated.\n\n**Active zones** replace a person's state with the zone's name (for example `Starbucks` instead of `not_home`) while they are inside, and the person's location in the UI follows. **Passive zones** never change a person's state, but zone triggers, zone conditions and the zone's `persons` list still work. Choose passive if you create many zones or don't want place names to replace `home`/`not_home`.",
         "data": {
           "zone_prefix": "Zone name prefix (optional)",
+          "label": "Label for the zones (optional)",
+          "new_label": "Or create a new label (optional)",
           "passive": "Make all zones passive",
           "distinguish_duplicates": "Tell same-named places apart",
           "auto_radius": "Size zones from OpenStreetMap footprints",
@@ -86,6 +92,8 @@
         },
         "data_description": {
           "zone_prefix": "Leave empty for no prefix.",
+          "label": "Existing label to put on every zone from this entry. Clear it to remove the label this integration added.",
+          "new_label": "Name of a label to create or reuse. If filled in, it wins over the picker above.",
           "passive": "Off: active zones. On: passive zones.",
           "auto_radius": "Turn off to use the fallback radius for every zone.",
           "search_radius": "How far to look for places.",

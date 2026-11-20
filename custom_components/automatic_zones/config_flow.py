@@ -16,6 +16,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     BooleanSelector,
     CountrySelector,
+    LabelSelector,
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
@@ -38,6 +39,8 @@ from .const import (
     CONF_POSTAL_CODE,
     CONF_SEARCH_RADIUS,
     CONF_STATE,
+    CONF_LABEL,
+    CONF_NEW_LABEL,
     CONF_ZONE_PREFIX,
     CONF_ZONE_RADIUS,
     DEFAULT_AUTO_RADIUS,
@@ -221,6 +224,8 @@ class POIZonesConfigFlow(ConfigFlow, domain=DOMAIN):
                 CONF_PLACE_NAME: self._place.short_name,
                 **{k: v for k, v in self._location_fields.items() if v},
                 CONF_ZONE_PREFIX: (user_input.get(CONF_ZONE_PREFIX) or "").strip(),
+                CONF_LABEL: user_input.get(CONF_LABEL) or "",
+                CONF_NEW_LABEL: (user_input.get(CONF_NEW_LABEL) or "").strip(),
                 CONF_PASSIVE: user_input[CONF_PASSIVE],
                 CONF_DISTINGUISH_DUPLICATES: user_input[CONF_DISTINGUISH_DUPLICATES],
                 CONF_AUTO_RADIUS: user_input[CONF_AUTO_RADIUS],
@@ -237,6 +242,8 @@ class POIZonesConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Optional(CONF_ZONE_PREFIX): TextSelector(),
+                    vol.Optional(CONF_LABEL): LabelSelector(),
+                    vol.Optional(CONF_NEW_LABEL): TextSelector(),
                     vol.Required(CONF_PASSIVE, default=DEFAULT_PASSIVE): BooleanSelector(),
                     vol.Required(
                         CONF_DISTINGUISH_DUPLICATES, default=DEFAULT_DISTINGUISH_DUPLICATES
@@ -267,6 +274,8 @@ class POIZonesOptionsFlow(OptionsFlow):
             # An emptied optional field is simply absent from the submission;
             # store "" so it overrides the prefix chosen at setup.
             user_input[CONF_ZONE_PREFIX] = (user_input.get(CONF_ZONE_PREFIX) or "").strip()
+            user_input[CONF_LABEL] = user_input.get(CONF_LABEL) or ""
+            user_input[CONF_NEW_LABEL] = (user_input.get(CONF_NEW_LABEL) or "").strip()
             user_input[CONF_SEARCH_RADIUS] = int(user_input[CONF_SEARCH_RADIUS])
             user_input[CONF_ZONE_RADIUS] = int(user_input[CONF_ZONE_RADIUS])
             return self.async_create_entry(title="", data=user_input)
@@ -275,6 +284,8 @@ class POIZonesOptionsFlow(OptionsFlow):
         schema = vol.Schema(
             {
                 vol.Optional(CONF_ZONE_PREFIX): TextSelector(),
+                vol.Optional(CONF_LABEL): LabelSelector(),
+                vol.Optional(CONF_NEW_LABEL): TextSelector(),
                 vol.Required(
                     CONF_PASSIVE, default=entry_value(entry, CONF_PASSIVE, DEFAULT_PASSIVE)
                 ): BooleanSelector(),
@@ -297,10 +308,14 @@ class POIZonesOptionsFlow(OptionsFlow):
                 ): _zone_radius_selector(),
             }
         )
+        suggested = {
+            CONF_ZONE_PREFIX: entry_value(entry, CONF_ZONE_PREFIX, ""),
+            CONF_NEW_LABEL: entry_value(entry, CONF_NEW_LABEL, ""),
+        }
+        if label := entry_value(entry, CONF_LABEL, ""):
+            suggested[CONF_LABEL] = label
         return self.async_show_form(
             step_id="init",
-            data_schema=self.add_suggested_values_to_schema(
-                schema, {CONF_ZONE_PREFIX: entry_value(entry, CONF_ZONE_PREFIX, "")}
-            ),
+            data_schema=self.add_suggested_values_to_schema(schema, suggested),
             description_placeholders={"place": entry.data.get(CONF_PLACE_NAME, "")},
         )
