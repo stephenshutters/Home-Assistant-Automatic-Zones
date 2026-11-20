@@ -67,7 +67,7 @@ def _zone_radius_selector() -> NumberSelector:
 
 
 class POIZonesConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for POI Zones."""
+    """Handle a config flow for Automatic Zones."""
 
     VERSION = 2
 

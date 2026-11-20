@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Unambiguous location setup**: city + optional state + country, or ZIP / postal code + country (Nominatim structured search). A picker appears when several places match. The resolved coordinates are stored, so nothing is re-geocoded at runtime.
 - **Footprint-based zone radius**: smallest circle around the OSM building outline plus attached parking lots, centred on that circle, padded 20 m, clamped to per-type limits. Runs in the background; cached 30 days. Can be turned off.
 - English translations (the original shipped none, so the setup form showed raw field keys).
-- `poi_zones.refresh` service description; it now bypasses all caches.
+- `automatic_zones.refresh` service description; it now bypasses all caches.
 - Sensor: `zone_entity_ids` (from the entity registry), `zone_names`, per-POI `zone_radius_m` and `radius_source`, `passive`, sizing progress.
 
 ### Changed

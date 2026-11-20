@@ -1,4 +1,4 @@
-# POI Zones
+# Automatic Zones
 
 Automatically create Home Assistant zones for Points of Interest near your location using OpenStreetMap data.
 
@@ -16,4 +16,4 @@ Automatically create Home Assistant zones for Points of Interest near your locat
 
 Get notified when family members are at a hospital for over 30 minutes - the automation template is included in the integration!
 
-See the [README](https://github.com/DEADSEC-SECURITY/ha-poi-zones) for full documentation.
+See the [README](https://github.com/stephenshutters/Home-Assistant-Automatic-Zones) for full documentation.

@@ -29,13 +29,13 @@ Automatically create Home Assistant zones for Points of Interest (POIs) near you
 
 ### Manual Installation
 
-1. Copy the `custom_components/poi_zones` folder to your Home Assistant's `custom_components` directory
+1. Copy the `custom_components/automatic_zones` folder to your Home Assistant's `custom_components` directory
 2. Restart Home Assistant
 
 ## Configuration
 
 1. Go to **Settings** → **Devices & Services**
-2. Click **Add Integration** and search for "POI Zones"
+2. Click **Add Integration** and search for "Automatic Zones"
 3. Choose the **POI type**
 4. Choose how to identify the place:
    - **City, state and country** (state is optional but recommended - there are dozens of Springfields), or
@@ -137,7 +137,7 @@ Each entry creates one sensor.
 
 ## Services
 
-`poi_zones.refresh` - re-query OpenStreetMap now, ignoring caches, and resize zones again.
+`automatic_zones.refresh` - re-query OpenStreetMap now, ignoring caches, and resize zones again.
 
 ## Zones you create yourself
 
@@ -229,7 +229,7 @@ Data is refreshed weekly by default; zone footprints are looked up in the backgr
 
 ### Zones Never Get Resized
 
-- Sizing needs the Overpass API; check the log for `Footprint lookup failed`. It retries on the next refresh, or run `poi_zones.refresh`.
+- Sizing needs the Overpass API; check the log for `Footprint lookup failed`. It retries on the next refresh, or run `automatic_zones.refresh`.
 - Places with no building outline in OSM keep the fallback radius by design.
 
 ### Wrong Zone Locations

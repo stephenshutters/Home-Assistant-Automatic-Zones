@@ -40,7 +40,7 @@ jobs:
           2. Click the 3 dots → "Custom repositories"
           3. Add: `https://github.com/${{ github.repository }}`
           4. Category: Integration
-          5. Search for "POI Zones" and install
+          5. Search for "Automatic Zones" and install
           6. Restart Home Assistant
 
           ### Manual Installation

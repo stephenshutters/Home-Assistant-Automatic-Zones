@@ -1,0 +1,104 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "POI type",
+        "description": "Choose which kind of place to create zones for. Add the integration again for each additional type.",
+        "data": {
+          "poi_type": "POI type"
+        }
+      },
+      "location_method": {
+        "title": "Where should we look?",
+        "description": "Many towns share a name, so pick the most exact way to identify yours.",
+        "menu_options": {
+          "city": "City, state and country",
+          "postal": "ZIP / postal code and country"
+        }
+      },
+      "city": {
+        "title": "City, state and country",
+        "description": "The state or region is optional but strongly recommended: there are over 30 places named Springfield in the US.",
+        "data": {
+          "city": "City",
+          "state": "State / region (optional)",
+          "country": "Country"
+        }
+      },
+      "postal": {
+        "title": "ZIP / postal code",
+        "description": "A postal code is only unique within a country, so the country is required.",
+        "data": {
+          "postal_code": "ZIP / postal code",
+          "country": "Country"
+        }
+      },
+      "pick": {
+        "title": "Which place?",
+        "description": "More than one place matched. Choose the one you mean.",
+        "data": {
+          "place": "Place"
+        }
+      },
+      "settings": {
+        "title": "Zone settings",
+        "description": "Creating **{poi_type}** zones around **{place}**.\n\n**Active zones** replace a person's state with the zone's name (for example `Starbucks` instead of `not_home`) while they are inside, and the person's location in the UI follows. **Passive zones** never change a person's state, but zone triggers, zone conditions and the zone's `persons` list still work. Choose passive if you create many zones or don't want place names to replace `home`/`not_home`.",
+        "data": {
+          "zone_prefix": "Zone name prefix (optional)",
+          "passive": "Make all zones passive",
+          "distinguish_duplicates": "Tell same-named places apart",
+          "auto_radius": "Size zones from OpenStreetMap footprints",
+          "search_radius": "Search radius",
+          "zone_radius": "Fallback zone radius"
+        },
+        "data_description": {
+          "zone_prefix": "Leave empty to name each zone after the place itself (e.g. `Starbucks`). With a prefix, zones are named `prefix_Name`.",
+          "passive": "Off: active zones (a person's state becomes the zone name). On: passive zones (a person's state is never changed).",
+          "auto_radius": "Fit each zone around the building and its attached parking lot using OpenStreetMap outlines. Sizing runs in the background after setup.",
+          "search_radius": "How far from the location above to look for places.",
+          "zone_radius": "Used when OpenStreetMap has no building outline for a place, and when sizing from footprints is turned off.",
+          "distinguish_duplicates": "Off: every place keeps its exact name (twenty Starbucks are all called `Starbucks`). On: places that share a name get the street (or OSM id) added, e.g. `Starbucks (Holcomb Bridge Rd)`."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach OpenStreetMap (Nominatim). Try again in a moment.",
+      "location_not_found": "No place matched that. Check the spelling, or add the state/region.",
+      "city_required": "Enter a city.",
+      "postal_required": "Enter a ZIP / postal code."
+    },
+    "abort": {
+      "already_configured": "This type of place is already set up for that location."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Automatic Zones options",
+        "description": "Zones around **{place}**. Changes rename and resize the existing zones; they are not recreated.\n\n**Active zones** replace a person's state with the zone's name (for example `Starbucks` instead of `not_home`) while they are inside, and the person's location in the UI follows. **Passive zones** never change a person's state, but zone triggers, zone conditions and the zone's `persons` list still work. Choose passive if you create many zones or don't want place names to replace `home`/`not_home`.",
+        "data": {
+          "zone_prefix": "Zone name prefix (optional)",
+          "passive": "Make all zones passive",
+          "distinguish_duplicates": "Tell same-named places apart",
+          "auto_radius": "Size zones from OpenStreetMap footprints",
+          "search_radius": "Search radius",
+          "zone_radius": "Fallback zone radius"
+        },
+        "data_description": {
+          "zone_prefix": "Leave empty for no prefix.",
+          "passive": "Off: active zones. On: passive zones.",
+          "auto_radius": "Turn off to use the fallback radius for every zone.",
+          "search_radius": "How far to look for places.",
+          "zone_radius": "Radius used when no OpenStreetMap outline is available.",
+          "distinguish_duplicates": "Off: every place keeps its exact name (twenty Starbucks are all called `Starbucks`). On: places that share a name get the street (or OSM id) added, e.g. `Starbucks (Holcomb Bridge Rd)`."
+        }
+      }
+    }
+  },
+  "services": {
+    "refresh": {
+      "name": "Refresh",
+      "description": "Re-query OpenStreetMap now, ignoring cached results, and resize zones again."
+    }
+  }
+}

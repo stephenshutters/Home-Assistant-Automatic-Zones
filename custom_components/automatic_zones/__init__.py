@@ -70,7 +70,7 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if entry.version == 1:
         data = {**entry.data, CONF_PASSIVE: False, CONF_AUTO_RADIUS: False, CONF_DISTINGUISH_DUPLICATES: False}
         hass.config_entries.async_update_entry(entry, data=data, version=2)
-        _LOGGER.info("Migrated POI Zones entry %s to version 2", entry.title)
+        _LOGGER.info("Migrated Automatic Zones entry %s to version 2", entry.title)
     return True
 
 
@@ -102,7 +102,7 @@ async def _async_ensure_coordinates(hass: HomeAssistant, entry: ConfigEntry) -> 
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: POIZonesConfigEntry) -> bool:
-    """Set up POI Zones from a config entry."""
+    """Set up Automatic Zones from a config entry."""
     await _async_ensure_coordinates(hass, entry)
 
     coordinator = POIZonesCoordinator(hass, entry)
