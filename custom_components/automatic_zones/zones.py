@@ -43,12 +43,17 @@ _LABEL_RETRIES = 5  # new zone entities register a moment after the zone is crea
 
 
 def get_zone_collection(hass: HomeAssistant) -> Any | None:
-    """The zone integration's storage collection, or None if unavailable."""
-    key = getattr(zone, "DATA_ZONE_STORAGE_COLLECTION", zone.DOMAIN)
-    collection = hass.data.get(key)
-    if collection is None or not hasattr(collection, "async_create_item"):
-        return None
-    return collection
+    """The zone integration's storage collection, or None if unavailable.
+
+    Older Home Assistant keeps the collection itself in ``hass.data["zone"]``;
+    newer versions (2026.x) keep a ``ZoneData`` object there that holds it as
+    ``storage_collection``. Both are handled.
+    """
+    data = hass.data.get(zone.DOMAIN)
+    for candidate in (data, getattr(data, "storage_collection", None)):
+        if candidate is not None and hasattr(candidate, "async_create_item"):
+            return candidate
+    return None
 
 
 def _differs(item: dict[str, Any], wanted: dict[str, Any]) -> bool:

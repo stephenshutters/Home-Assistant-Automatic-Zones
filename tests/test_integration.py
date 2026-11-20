@@ -393,3 +393,23 @@ async def test_deleted_label_id_is_ignored(hass):
     entry = make_entry(label="does_not_exist")
     await _setup(hass, entry)
     assert all(v == set() for v in zone_labels(hass).values())
+
+
+async def test_zone_collection_found_in_new_and_old_layouts(hass):
+    """HA 2026.x wraps the collection in ZoneData; older versions store it directly."""
+    from types import SimpleNamespace
+
+    from custom_components.automatic_zones.zones import get_zone_collection
+
+    assert await async_setup_component(hass, "zone", {})
+    real = hass.data["zone"]
+    collection = real if hasattr(real, "async_create_item") else real.storage_collection
+    try:
+        hass.data["zone"] = collection  # old layout
+        assert get_zone_collection(hass) is collection
+        hass.data["zone"] = SimpleNamespace(storage_collection=collection)  # new layout
+        assert get_zone_collection(hass) is collection
+        hass.data["zone"] = SimpleNamespace()  # nothing usable
+        assert get_zone_collection(hass) is None
+    finally:
+        hass.data["zone"] = real
