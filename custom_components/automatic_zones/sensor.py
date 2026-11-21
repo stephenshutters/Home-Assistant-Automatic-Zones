@@ -91,6 +91,7 @@ class POISensor(CoordinatorEntity[POIZonesCoordinator], SensorEntity):
             zone_entity_ids.append(entity_id)
             location = {
                 "name": poi["name"],
+                "osm_name": poi.get("osm_name", poi["name"]),
                 "zone_name": poi["zone_name"],
                 "zone_entity_id": entity_id,
                 "zone_id": entity_id.removeprefix("zone."),

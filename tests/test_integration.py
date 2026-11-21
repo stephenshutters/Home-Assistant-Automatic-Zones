@@ -622,3 +622,35 @@ async def test_automatic_refresh_off_keeps_data_and_never_polls(hass):
         await coordinator.async_refresh()
         await hass.async_block_till_done(wait_background_tasks=True)
     assert calls
+
+
+# -- one custom name for every zone -------------------------------------------
+async def test_custom_name_replaces_real_names(hass):
+    entry = make_entry(custom_name="Coffee", distinguish_duplicates=False)
+    await _setup(hass, entry)
+    assert sorted(z["name"] for z in zones(hass).values() if z["name"] != "Home") == ["Coffee"] * 3
+    attrs = hass.states.get("sensor.restaurants_near_roswell_georgia").attributes
+    assert {l["name"] for l in attrs["locations"]} == {"Coffee"}
+    assert {l["osm_name"] for l in attrs["locations"]} == {"Starbucks", "Cafe Solo"}
+
+
+async def test_custom_name_with_prefix_and_street_suffixes(hass):
+    entry = make_entry(custom_name="Coffee", zone_prefix="food", distinguish_duplicates=True)
+    with patch(REVERSE, AsyncMock(return_value={})):
+        await _setup(hass, entry)
+    names = sorted(z["name"] for z in zones(hass).values() if z["name"] != "Home")
+    # Cafe Solo has no address at all, so it keeps the plain custom name.
+    assert names == ["food_Coffee", "food_Coffee (Alpharetta Hwy)", "food_Coffee (Holcomb Bridge Rd)"]
+    assert not any("Starbucks" in n or "Cafe Solo" in n for n in names)
+
+
+async def test_changing_the_custom_name_renames_zones_in_place(hass):
+    entry = make_entry(distinguish_duplicates=False)
+    await _setup(hass, entry)
+    ids_before = set(zones(hass))
+    hass.config_entries.async_update_entry(entry, options={"custom_name": "Hangout"})
+    with patch(OVERPASS, side_effect=fake_overpass):
+        await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done(wait_background_tasks=True)
+    assert set(zones(hass)) == ids_before  # same zones, not recreated
+    assert sorted(z["name"] for z in zones(hass).values() if z["name"] != "Home") == ["Hangout"] * 3

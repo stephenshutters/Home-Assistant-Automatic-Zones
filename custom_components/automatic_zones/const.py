@@ -22,6 +22,7 @@ CONF_PLACE_NAME: Final = "place_name"  # short human label, e.g. "Roswell, Georg
 
 # Zone behaviour
 CONF_ZONE_PREFIX: Final = "zone_prefix"  # optional
+CONF_CUSTOM_NAME: Final = "custom_name"  # optional: one name for every zone
 CONF_PASSIVE: Final = "passive"
 CONF_AUTO_RADIUS: Final = "auto_radius"
 CONF_DISTINGUISH_DUPLICATES: Final = "distinguish_duplicates"

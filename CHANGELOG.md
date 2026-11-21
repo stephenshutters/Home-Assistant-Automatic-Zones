@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] - 2026-11-21
+
+### Added
+- **Zone name** (optional, next to the prefix): name every zone in an entry the same, e.g. `Movie Theater`, instead of each place's real name. Works for businesses and categories, combines with a prefix, and with "Tell same-named places apart" each zone gets its street or city. Changeable later under Configure (zones are renamed in place). Sensor locations keep the real name as `osm_name`.
+
 ## [2.5.0] - 2026-11-21
 
 ### Added

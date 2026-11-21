@@ -19,6 +19,7 @@ from .const import (
     CONF_BUSINESS_NAME,
     CONF_CITY,
     CONF_AUTO_REFRESH,
+    CONF_CUSTOM_NAME,
     CONF_DISTINGUISH_DUPLICATES,
     CONF_LATITUDE,
     CONF_LONGITUDE,
@@ -500,6 +501,12 @@ class POIZonesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             pois.append(poi)
 
         pois = self._dedupe(pois)
+        # Your own name for every zone ("Movie Theater"); same-named places are
+        # then told apart exactly like real duplicates (street / city).
+        if custom := str(entry_value(self.config_entry, CONF_CUSTOM_NAME, "") or "").strip():
+            for poi in pois:
+                poi["osm_name"] = poi["name"]
+                poi["name"] = custom
         unify_name_case(pois)
         pois.sort(key=lambda p: (p["name"].casefold(), p["key"]))
         return pois
