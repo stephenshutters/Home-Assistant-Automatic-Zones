@@ -44,6 +44,7 @@ from .geometry import haversine_m
 from .helpers import (
     assign_zone_names,
     entry_value,
+    is_department,
     pois_needing_lookup,
     unify_name_case,
     zone_prefix,
@@ -432,6 +433,8 @@ class POIZonesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             name = (tags.get("name") or "").strip()
             if not name:  # unnamed POIs make useless zones
                 continue
+            if self.poi_type == BUSINESS_TYPE and is_department(name, self.business_name):
+                continue  # "Walmart Pharmacy" when you searched for "Walmart"
 
             if self.poi_type in ("hospital", "urgent_care"):
                 radius = self._calculate_hospital_radius(element, tags)

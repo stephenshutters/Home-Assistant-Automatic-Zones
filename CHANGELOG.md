@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-11-20
+
+### Changed
+- Business-name searches leave out departments of a store (Pharmacy, Vision Center, Auto Care Center, Garden Center, Bakery, Deli, Fuel ...) unless the search names them. `Walmart` finds Supercenters and Neighborhood Markets; `Walmart Pharmacy` finds the pharmacies. Existing business entries drop those zones on the next refresh.
+
 ## [2.2.4] - 2026-11-20
 
 ### Fixed

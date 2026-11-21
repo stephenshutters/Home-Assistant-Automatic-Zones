@@ -159,3 +159,14 @@ def test_no_icon_that_is_missing_from_material_design_icons():
     icons = {t["icon"] for t in const.POI_TYPES.values()} | set(coordinator._AMENITY_ICONS.values())
     assert "mdi:pharmacy" not in icons  # not in HA's MDI set (use mdi:pill)
     assert all(i.startswith("mdi:") for i in icons)
+
+
+def test_departments_are_left_out_unless_searched_for():
+    from custom_components.automatic_zones.helpers import is_department
+    for name in ("Walmart Pharmacy", "Walmart Vision Center", "Walmart Auto Care Center", "Walmart Garden Center"):
+        assert is_department(name, "Walmart")
+    for name in ("Walmart", "Walmart Supercenter", "Walmart Neighborhood Market"):
+        assert not is_department(name, "Walmart")
+    assert not is_department("Walmart Pharmacy", "Walmart Pharmacy")
+    assert not is_department("Walmart Pharmacy", "pharmacy")
+    assert not is_department("Walgreens", "Walgreens")  # a pharmacy chain searched by its own name

@@ -150,3 +150,28 @@ def assign_zone_names(
         for m in members:
             if suffix := suffixes.get(m["key"]):
                 m["zone_name"] = f"{m['zone_name']} ({suffix})"
+
+
+# Departments and services inside a big store are mapped as places of their own
+# ("Walmart Pharmacy"). A search for the store name should not return them
+# unless the search itself names one.
+DEPARTMENT_WORDS: tuple[str, ...] = (
+    "pharmacy", "vision", "optical", "optometry", "auto care", "tire", "lube",
+    "garden center", "bakery", "deli", "photo", "portrait", "money center",
+    "money services", "fuel", "gas station", "gas", "pickup", "grocery pickup",
+    "hearing", "wireless", "connection center", "service center", "car wash",
+    "clinic", "health center", "dental",
+)
+
+
+def _words(text: str) -> str:
+    return " " + " ".join(re.sub(r"[^\w]+", " ", text.casefold()).split()) + " "
+
+
+def is_department(name: str, query: str) -> bool:
+    """True when ``name`` is a department of a store the ``query`` does not ask for."""
+    padded_name, padded_query = _words(name), _words(query)
+    return any(
+        f" {word} " in padded_name and f" {word} " not in padded_query
+        for word in DEPARTMENT_WORDS
+    )
