@@ -18,6 +18,7 @@ from .const import (
     CONF_AUTO_RADIUS,
     CONF_BUSINESS_NAME,
     CONF_CITY,
+    CONF_AUTO_REFRESH,
     CONF_DISTINGUISH_DUPLICATES,
     CONF_LATITUDE,
     CONF_LONGITUDE,
@@ -26,6 +27,7 @@ from .const import (
     CONF_SEARCH_RADIUS,
     CONF_ZONE_RADIUS,
     DEFAULT_AUTO_RADIUS,
+    DEFAULT_AUTO_REFRESH,
     DEFAULT_DISTINGUISH_DUPLICATES,
     DEFAULT_SEARCH_RADIUS,
     DOMAIN,
@@ -123,8 +125,15 @@ class POIZonesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER,
             config_entry=entry,
             name=f"{DOMAIN}_{entry.entry_id}",
-            update_interval=timedelta(seconds=UPDATE_INTERVAL),
+            update_interval=(
+                timedelta(seconds=UPDATE_INTERVAL)
+                if entry_value(entry, CONF_AUTO_REFRESH, DEFAULT_AUTO_REFRESH)
+                else None
+            ),
         )
+        # Off: the places and sizes found at setup are kept for good (until you
+        # call automatic_zones.refresh or change the search settings).
+        self.auto_refresh: bool = bool(entry_value(entry, CONF_AUTO_REFRESH, DEFAULT_AUTO_REFRESH))
         self.poi_type: str = entry.data[CONF_POI_TYPE]
         self.business_name: str = (entry.data.get(CONF_BUSINESS_NAME) or "").strip()
         # What the entry looks for, for titles, logs and sensor attributes.
@@ -208,7 +217,7 @@ class POIZonesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         fresh = (
             cached
             and cached.get("sig") == sig
-            and time.time() - cached.get("ts", 0) < POI_CACHE_TTL
+            and (not self.auto_refresh or time.time() - cached.get("ts", 0) < POI_CACHE_TTL)
             and not self.force_refresh
         )
 
@@ -267,7 +276,7 @@ class POIZonesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if (
             entry
             and entry.get("v") == RADIUS_ALGORITHM_VERSION
-            and time.time() - entry.get("ts", 0) < RADIUS_CACHE_TTL
+            and (not self.auto_refresh or time.time() - entry.get("ts", 0) < RADIUS_CACHE_TTL)
         ):
             return entry
         return None

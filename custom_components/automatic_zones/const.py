@@ -25,6 +25,7 @@ CONF_ZONE_PREFIX: Final = "zone_prefix"  # optional
 CONF_PASSIVE: Final = "passive"
 CONF_AUTO_RADIUS: Final = "auto_radius"
 CONF_DISTINGUISH_DUPLICATES: Final = "distinguish_duplicates"
+CONF_AUTO_REFRESH: Final = "auto_refresh"
 CONF_LABEL: Final = "label"  # id of an existing HA label to put on every zone
 CONF_NEW_LABEL: Final = "new_label"  # name of a label to create/reuse (wins over CONF_LABEL)
 CONF_SEARCH_RADIUS: Final = "search_radius"  # km around the resolved location
@@ -38,6 +39,7 @@ DEFAULT_SEARCH_RADIUS_POSTAL: Final = 10  # km (postal-code search)
 DEFAULT_ZONE_RADIUS: Final = 150  # m, only used if a type has no radius
 DEFAULT_PASSIVE: Final = False  # False == active zones, same as upstream
 DEFAULT_AUTO_RADIUS: Final = True
+DEFAULT_AUTO_REFRESH: Final = True  # re-check OpenStreetMap weekly
 DEFAULT_DISTINGUISH_DUPLICATES: Final = False  # same name -> same zone name
 
 # ---------------------------------------------------------------------------

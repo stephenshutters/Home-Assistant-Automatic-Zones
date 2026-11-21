@@ -576,3 +576,49 @@ async def test_other_entries_zones_are_not_mistaken_for_hand_made(hass):
         await hass.async_block_till_done(wait_background_tasks=True)
     assert second.state is ConfigEntryState.LOADED
     assert sum(1 for z in zones(hass).values() if z["name"] != "Home") == 6
+
+
+# -- automatic refresh on/off -------------------------------------------------
+async def _refresh_count(hass, entry):
+    calls = []
+
+    async def overpass(session, query):
+        calls.append(query)
+        return await fake_overpass(session, query)
+
+    coordinator = entry.runtime_data.coordinator
+    # Pretend the stored data is very old (30+ days).
+    coordinator.cache["pois"]["ts"] -= 40 * 86400
+    for r in coordinator.cache["radii"].values():
+        r["ts"] -= 40 * 86400
+    with patch(OVERPASS, side_effect=overpass):
+        await coordinator.async_refresh()
+        await hass.async_block_till_done(wait_background_tasks=True)
+    return len(calls)
+
+
+async def test_automatic_refresh_on_refetches_old_data(hass):
+    entry = make_entry()
+    await _setup(hass, entry)
+    assert entry.runtime_data.coordinator.update_interval is not None
+    assert await _refresh_count(hass, entry) > 0
+
+
+async def test_automatic_refresh_off_keeps_data_and_never_polls(hass):
+    entry = make_entry(auto_refresh=False)
+    await _setup(hass, entry)
+    coordinator = entry.runtime_data.coordinator
+    assert coordinator.update_interval is None  # no weekly timer
+    assert await _refresh_count(hass, entry) == 0  # old data is kept, nothing requested
+    # ...but a manual refresh still fetches.
+    calls = []
+
+    async def overpass(session, query):
+        calls.append(query)
+        return await fake_overpass(session, query)
+
+    coordinator.force_refresh = True
+    with patch(OVERPASS, side_effect=overpass):
+        await coordinator.async_refresh()
+        await hass.async_block_till_done(wait_background_tasks=True)
+    assert calls

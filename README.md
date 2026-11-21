@@ -48,10 +48,17 @@ Automatically create Home Assistant zones for Points of Interest (POIs) near you
 | **Zone name prefix** (optional) | Empty: zones are named after the place (`Starbucks`). With a prefix: `prefix_Starbucks`. |
 | **Make all zones passive** | See below. |
 | **Size zones from OpenStreetMap footprints** | On by default. See [Zone sizing](#zone-sizing). |
+| **Refresh places automatically** | On by default. See [Refreshing](#refreshing). |
 | **Search radius** | How far from the place to look (default 25 km for a city, 10 km for a ZIP). |
 | **Fallback zone radius** | Used when OpenStreetMap has no outline for a place (or sizing is off). |
 
 Every setting except the location can be changed later under **Configure**. Zones are renamed, resized and switched between active/passive **in place** - they are not recreated, so entity ids and automations keep working.
+
+### Refreshing
+
+With **Refresh places automatically** on (the default), once a week the integration re-downloads the list of places from OpenStreetMap: a store that opens gets a zone, a closed one loses its zone, and a renamed one is renamed. Zone sizes (building and parking-lot outlines) are re-measured every 30 days; they rarely change, but mappers do correct them.
+
+Turn it **off** (per entry, under **Configure**) and the places and sizes found at setup are kept as they are: nothing is added, removed or resized on its own, and no requests are made after setup. You can still refresh by hand with the `automatic_zones.refresh` action, and changing the search settings fetches fresh data once.
 
 ### Active vs. passive zones
 

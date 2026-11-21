@@ -55,6 +55,7 @@ async def test_city_flow_creates_entry_with_optional_prefix_empty(hass):
     assert data["passive"] is True
     assert data["zone_prefix"] == ""
     assert data["distinguish_duplicates"] is False
+    assert data["auto_refresh"] is True
     assert (data["latitude"], data["longitude"]) == (34.0232, -84.3616)
     assert (data["city"], data["state"], data["country"]) == ("Roswell", "Georgia", "US")
     assert result["title"] == "Grocery Stores - Roswell, Georgia"

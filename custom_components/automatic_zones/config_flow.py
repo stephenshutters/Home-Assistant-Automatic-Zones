@@ -32,6 +32,7 @@ from .const import (
     CONF_AUTO_RADIUS,
     CONF_CITY,
     CONF_COUNTRY,
+    CONF_AUTO_REFRESH,
     CONF_DISTINGUISH_DUPLICATES,
     CONF_LATITUDE,
     CONF_LONGITUDE,
@@ -46,6 +47,7 @@ from .const import (
     CONF_ZONE_PREFIX,
     CONF_ZONE_RADIUS,
     DEFAULT_AUTO_RADIUS,
+    DEFAULT_AUTO_REFRESH,
     DEFAULT_DISTINGUISH_DUPLICATES,
     DEFAULT_PASSIVE,
     DEFAULT_SEARCH_RADIUS,
@@ -256,6 +258,7 @@ class POIZonesConfigFlow(ConfigFlow, domain=DOMAIN):
                 CONF_PASSIVE: user_input[CONF_PASSIVE],
                 CONF_DISTINGUISH_DUPLICATES: user_input[CONF_DISTINGUISH_DUPLICATES],
                 CONF_AUTO_RADIUS: user_input[CONF_AUTO_RADIUS],
+                CONF_AUTO_REFRESH: user_input[CONF_AUTO_REFRESH],
                 CONF_SEARCH_RADIUS: int(user_input[CONF_SEARCH_RADIUS]),
                 CONF_ZONE_RADIUS: int(user_input[CONF_ZONE_RADIUS]),
             }
@@ -277,6 +280,7 @@ class POIZonesConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_DISTINGUISH_DUPLICATES, default=DEFAULT_DISTINGUISH_DUPLICATES
                     ): BooleanSelector(),
                     vol.Required(CONF_AUTO_RADIUS, default=DEFAULT_AUTO_RADIUS): BooleanSelector(),
+                    vol.Required(CONF_AUTO_REFRESH, default=DEFAULT_AUTO_REFRESH): BooleanSelector(),
                     vol.Required(CONF_SEARCH_RADIUS, default=default_search): _search_radius_selector(),
                     vol.Required(CONF_ZONE_RADIUS, default=poi_config["radius"]): _zone_radius_selector(),
                 }
@@ -325,6 +329,10 @@ class POIZonesOptionsFlow(OptionsFlow):
                 ): BooleanSelector(),
                 vol.Required(
                     CONF_AUTO_RADIUS, default=entry_value(entry, CONF_AUTO_RADIUS, DEFAULT_AUTO_RADIUS)
+                ): BooleanSelector(),
+                vol.Required(
+                    CONF_AUTO_REFRESH,
+                    default=entry_value(entry, CONF_AUTO_REFRESH, DEFAULT_AUTO_REFRESH),
                 ): BooleanSelector(),
                 vol.Required(
                     CONF_SEARCH_RADIUS,

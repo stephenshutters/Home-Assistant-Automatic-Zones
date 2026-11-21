@@ -61,7 +61,8 @@
           "distinguish_duplicates": "Tell same-named places apart",
           "auto_radius": "Size zones from OpenStreetMap footprints",
           "search_radius": "Search radius",
-          "zone_radius": "Fallback zone radius"
+          "zone_radius": "Fallback zone radius",
+          "auto_refresh": "Refresh places automatically"
         },
         "data_description": {
           "zone_prefix": "Leave empty to name each zone after the place itself (e.g. `Starbucks`). With a prefix, zones are named `prefix_Name`.",
@@ -71,7 +72,8 @@
           "auto_radius": "Fit each zone around the building and its attached parking lot using OpenStreetMap outlines. Sizing runs in the background after setup.",
           "search_radius": "How far from the location above to look for places.",
           "zone_radius": "Used when OpenStreetMap has no building outline for a place, and when sizing from footprints is turned off.",
-          "distinguish_duplicates": "Off: every place keeps its exact name (twenty Starbucks are all called `Starbucks`). On: places that share a name get a street or city added, e.g. `Starbucks (Holcomb Bridge Rd)`."
+          "distinguish_duplicates": "Off: every place keeps its exact name (twenty Starbucks are all called `Starbucks`). On: places that share a name get a street or city added, e.g. `Starbucks (Holcomb Bridge Rd)`.",
+          "auto_refresh": "On (recommended): once a week the integration re-downloads the list of places from OpenStreetMap, so a store that opens gets a zone, a closed one loses its zone, and a renamed one is renamed. Zone sizes (building and parking-lot outlines) are re-measured every 30 days, because they rarely change but mappers do fix them. Off: places and sizes found when you set this up are kept as they are, forever. Nothing is added, removed or resized on its own, and no internet requests are made after setup. You can still refresh by hand with the `automatic_zones.refresh` action, and changing the search settings fetches fresh data once."
         }
       }
     },
@@ -99,7 +101,8 @@
           "distinguish_duplicates": "Tell same-named places apart",
           "auto_radius": "Size zones from OpenStreetMap footprints",
           "search_radius": "Search radius",
-          "zone_radius": "Fallback zone radius"
+          "zone_radius": "Fallback zone radius",
+          "auto_refresh": "Refresh places automatically"
         },
         "data_description": {
           "zone_prefix": "Leave empty for no prefix.",
@@ -109,7 +112,8 @@
           "auto_radius": "Turn off to use the fallback radius for every zone.",
           "search_radius": "How far to look for places.",
           "zone_radius": "Radius used when no OpenStreetMap outline is available.",
-          "distinguish_duplicates": "Off: every place keeps its exact name (twenty Starbucks are all called `Starbucks`). On: places that share a name get a street or city added, e.g. `Starbucks (Holcomb Bridge Rd)`."
+          "distinguish_duplicates": "Off: every place keeps its exact name (twenty Starbucks are all called `Starbucks`). On: places that share a name get a street or city added, e.g. `Starbucks (Holcomb Bridge Rd)`.",
+          "auto_refresh": "On (recommended): once a week the integration re-downloads the list of places from OpenStreetMap, so a store that opens gets a zone, a closed one loses its zone, and a renamed one is renamed. Zone sizes (building and parking-lot outlines) are re-measured every 30 days, because they rarely change but mappers do fix them. Off: places and sizes found when you set this up are kept as they are, forever. Nothing is added, removed or resized on its own, and no internet requests are made after setup. You can still refresh by hand with the `automatic_zones.refresh` action, and changing the search settings fetches fresh data once."
         }
       }
     }
