@@ -266,6 +266,7 @@ This project is licensed under the MIT License.
 
 ## Credits
 
+- [**POI Zones**](https://github.com/DEADSEC-SECURITY/ha-poi-zones) by [DEADSEC-SECURITY](https://github.com/DEADSEC-SECURITY) - the original integration this project is forked from. It created the foundation: the idea of turning OpenStreetMap places into Home Assistant zones, the config flow and the POI categories. Released under the MIT License, which this fork keeps.
 - OpenStreetMap contributors for POI data
 - Nominatim for geocoding
 - Overpass API for OSM queries
