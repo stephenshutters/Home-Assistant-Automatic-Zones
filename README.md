@@ -72,7 +72,7 @@ OpenStreetMap often spells one business several ways (`ALDI`, `Aldi`). Places wh
 
 ### Searching for one business
 
-Choose **A specific business** and type a name. Matching ignores capitalization and punctuation, and checks both the place's name and its brand, so `Walmart` finds Walmarts and not every grocery store. Departments inside a store (Pharmacy, Vision Center, Auto Care Center, Garden Center, Bakery, Deli, Fuel and similar) are left out unless your search names them: `Walmart` returns Supercenters and Neighborhood Markets, `Walmart Pharmacy` returns the pharmacies. The business name cannot be changed later; add a second entry for another business.
+Choose **A specific business** and type a name. Matching ignores capitalization and punctuation, and checks both the place's name and its brand, so `Walmart` finds Walmarts and not every grocery store. Departments inside a store (Pharmacy, Vision Center, Auto Care Center, Garden Center, Bakery, Deli, Fuel and similar) are left out unless your search names them: `Walmart` returns Supercenters and Neighborhood Markets, `Walmart Pharmacy` returns the pharmacies. Services mapped as their own places under the same name (a fuel station or pharmacy called just "Walmart") are left out too whenever most matches are another kind of place; searching `QuikTrip` still returns every gas station. The business name cannot be changed later; add a second entry for another business.
 
 ## Available POI Types
 

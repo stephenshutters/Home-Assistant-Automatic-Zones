@@ -44,6 +44,7 @@ from .geometry import haversine_m
 from .helpers import (
     assign_zone_names,
     entry_value,
+    drop_services,
     is_department,
     pois_needing_lookup,
     unify_name_case,
@@ -421,6 +422,8 @@ class POIZonesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _process_elements(self, elements: list[dict[str, Any]]) -> list[dict[str, Any]]:
         poi_config = POI_TYPES[self.poi_type]
         pois: list[dict[str, Any]] = []
+        if self.poi_type == BUSINESS_TYPE:
+            elements = drop_services(elements, self.business_name)
         for element in elements:
             if element["type"] == "node":
                 lat, lon = element.get("lat"), element.get("lon")

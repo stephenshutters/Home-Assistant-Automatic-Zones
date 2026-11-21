@@ -170,3 +170,19 @@ def test_departments_are_left_out_unless_searched_for():
     assert not is_department("Walmart Pharmacy", "Walmart Pharmacy")
     assert not is_department("Walmart Pharmacy", "pharmacy")
     assert not is_department("Walgreens", "Walgreens")  # a pharmacy chain searched by its own name
+
+
+def test_service_categories_dropped_only_when_the_main_matches_are_other_things():
+    from custom_components.automatic_zones.helpers import drop_services
+
+    def el(i, **tags):
+        return {"id": i, "tags": {"name": "Walmart", **tags}}
+
+    walmart = [el(1, shop="supermarket"), el(2, shop="department_store"), el(3, shop="supermarket"),
+               el(4, amenity="fuel"), el(5, amenity="pharmacy")]
+    kept = {e["id"] for e in drop_services(walmart, "Walmart")}
+    assert kept == {1, 2, 3}
+    assert {e["id"] for e in drop_services(walmart, "Walmart pharmacy")} == {1, 2, 3, 5}
+    # A gas-station chain keeps its gas stations; a pharmacy chain its pharmacies.
+    assert len(drop_services([el(i, amenity="fuel") for i in range(3)], "QuikTrip")) == 3
+    assert len(drop_services([el(i, amenity="pharmacy") for i in range(3)], "Walgreens")) == 3

@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.1] - 2026-11-20
+
+### Fixed
+- Business searches also leave out services mapped under the store's own name, such as a fuel station called "Walmart", when most matches are a different kind of place. Chains that are themselves gas stations or pharmacies are unaffected.
+
 ## [2.4.0] - 2026-11-20
 
 ### Added

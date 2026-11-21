@@ -175,3 +175,35 @@ def is_department(name: str, query: str) -> bool:
         f" {word} " in padded_name and f" {word} " not in padded_query
         for word in DEPARTMENT_WORDS
     )
+
+
+# Categories that are usually a service inside, or beside, a bigger store: a
+# fuel station called just "Walmart", a pharmacy counter, an optician. They are
+# dropped from a business search ONLY when the other matches are a different
+# kind of place, so searching "QuikTrip" still returns every gas station.
+SERVICE_CATEGORIES: frozenset[str] = frozenset(
+    {"fuel", "pharmacy", "optician", "car_wash", "car_repair", "tyres", "bakery", "photo",
+     "hearing_aids", "bank", "atm", "post_office", "doctors", "clinic", "dentist"}
+)
+
+
+def _category(tags: dict[str, Any]) -> str:
+    return str(tags.get("shop") or tags.get("amenity") or tags.get("healthcare") or "")
+
+
+def drop_services(elements: list[dict[str, Any]], query: str) -> list[dict[str, Any]]:
+    """Remove service-type matches when the main matches are something else."""
+    counts = Counter(_category(e.get("tags", {})) for e in elements)
+    counts.pop("", None)
+    if not counts:
+        return elements
+    dominant = counts.most_common(1)[0][0]
+    if dominant in SERVICE_CATEGORIES:
+        return elements  # the business itself is a service (QuikTrip, Walgreens)
+    asked = _words(query)
+    return [
+        e for e in elements
+        if (c := _category(e.get("tags", {}))) not in SERVICE_CATEGORIES
+        or c == dominant
+        or f" {c.replace('_', ' ')} " in asked
+    ]
