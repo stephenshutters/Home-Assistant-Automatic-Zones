@@ -248,16 +248,21 @@ def business_name_regex(name: str) -> str:
 
 
 def build_business_query(name: str, lat: float, lon: float, radius_m: int) -> str:
-    """Every shop/amenity/office ... whose name or brand contains ``name``."""
+    """Every shop/amenity/office ... whose name or brand contains ``name``.
+
+    Uses a bounding box (spatial index) instead of ``around``: a regex over
+    every name in the database is only fast when the area is cut down first.
+    """
     pattern = business_name_regex(name)
-    around = f"(around:{radius_m},{lat},{lon})"
-    # Explicit keys (not a key regex, which Overpass answers far more slowly).
+    dlat = radius_m / 111_320
+    dlon = radius_m / (111_320 * max(math.cos(math.radians(lat)), 0.01))
+    box = f"({lat - dlat:.5f},{lon - dlon:.5f},{lat + dlat:.5f},{lon + dlon:.5f})"
     parts = "".join(
-        f'nwr["{key}"~"{pattern}",i]{sel}{around};'
+        f'nwr{box}["{key}"~"{pattern}",i]{sel};'
         for sel in _PLACE_SELECTORS
         for key in ("name", "brand")
     )
-    return f"[out:json][timeout:60];({parts});out tags center;"
+    return f"[out:json][timeout:90];({parts});out tags center;"
 
 
 def build_geometry_query(keys: list[str]) -> str:

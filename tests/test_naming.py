@@ -140,6 +140,6 @@ def test_business_regex_has_no_special_characters():
 def test_business_query_is_case_insensitive_name_or_brand_and_only_real_places():
     q = build_business_query("Walmart", 34.0, -84.0, 25000)
     assert '["name"~"Walmart",i]' in q and '["brand"~"Walmart",i]' in q
-    assert '["shop"]' in q and '["amenity"]' in q and "(around:25000,34.0,-84.0)" in q
+    assert '["shop"]' in q and '["amenity"]' in q and "(33.77" in q
     assert "parking" in q  # parking lots are excluded
     assert q.endswith("out tags center;")

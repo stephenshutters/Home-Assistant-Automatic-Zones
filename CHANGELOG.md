@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.2] - 2026-11-20
+
+### Fixed
+- Business-name searches now cut the area down with a bounding box before matching names. Overpass timed out ("Query timed out after 93 seconds") on the previous query form. The search area is a square around the place instead of a circle.
+
 ## [2.2.1] - 2026-11-20
 
 ### Fixed
