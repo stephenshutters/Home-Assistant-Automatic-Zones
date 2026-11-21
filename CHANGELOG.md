@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-11-20
+
+### Added
+- **No duplicates of zones you made by hand.** A place already covered by a hand-made zone (centres closer than the smaller radius, at least 50 m, any name) gets no zone from the integration; one it created earlier is deleted as soon as yours exists. Your zone is never edited.
+
+### Fixed
+- An entry could adopt zones created by another entry when names and positions matched (for example a Walmart entry next to a Grocery entry). Entries now only ever manage their own zones.
+
 ## [2.3.0] - 2026-11-20
 
 ### Changed

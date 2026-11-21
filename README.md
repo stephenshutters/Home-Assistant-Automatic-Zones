@@ -149,7 +149,9 @@ Each entry creates one sensor.
 
 ## Zones you create yourself
 
-The integration tracks the zones it creates by id. It never edits or deletes a zone you made, even if the names match (yours keeps `zone.walmart`, ours becomes `zone.walmart_2`). Unloading, reloading or disabling the entry leaves its zones in place; **deleting the entry removes them**.
+The integration tracks the zones it creates by id. It never edits or deletes a zone you made.
+
+**No duplicates of your own zones.** If a zone you made by hand already covers a place (its centre is closer than the smaller of the two radii, at least 50 m, whatever the zone is called), the integration does not create a second zone there. If it had already created one, it deletes its own as soon as it notices yours. The sensor reports your zone for that place. A neighbour's small zone across the street does not count. Zones made by other Automatic Zones entries are not treated as hand-made, and entries never take over each other's zones. Unloading, reloading or disabling the entry leaves its zones in place; **deleting the entry removes them**.
 
 ## Example Automations
 

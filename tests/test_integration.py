@@ -523,3 +523,56 @@ async def test_lookup_only_for_places_that_need_it(hass):
     assert reverse.call_count == 0
     names = sorted(z["name"] for z in zones(hass).values() if z["name"] != "Home")
     assert names == ["Aldi (A St)", "Aldi (B St)"]  # tie -> mixed case beats ALL CAPS
+
+
+# -- hand-made zones that already cover a place ------------------------------
+async def test_no_second_zone_where_a_hand_made_one_exists(hass):
+    assert await async_setup_component(hass, "zone", {})
+    p = ll(0, 0)  # the first Starbucks
+    mine = await hass.data["zone"].async_create_item(
+        {"name": "Coffee", "latitude": p["lat"] + 0.0002, "longitude": p["lon"], "radius": 80.0, "passive": False}
+    )
+    far = ll(0, 400)  # a neighbour's small zone nearby must not block anything
+    await hass.data["zone"].async_create_item(
+        {"name": "Neighbour", "latitude": far["lat"], "longitude": far["lon"], "radius": 30.0, "passive": False}
+    )
+    entry = make_entry()
+    entry.add_to_hass(hass)
+    with patch(OVERPASS, side_effect=fake_overpass):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+    names = sorted(z["name"] for z in zones(hass).values() if z["name"] != "Home")
+    assert names == ["Cafe Solo", "Coffee", "Neighbour", "Starbucks (Alpharetta Hwy)"]
+    assert zones(hass)[mine["id"]]["radius"] == 80.0  # untouched
+    attrs = hass.states.get("sensor.restaurants_near_roswell_georgia").attributes
+    covered = [l for l in attrs["locations"] if l["zone_entity_id"] == "zone.coffee"]
+    assert len(covered) == 1 and covered[0]["name"] == "Starbucks"  # reported as covered by yours
+
+
+async def test_our_zone_is_removed_when_you_later_draw_your_own(hass):
+    entry = make_entry()
+    await _setup(hass, entry)
+    ours = by_name(hass, "Starbucks (Holcomb Bridge Rd)")
+    p = ll(0, 0)
+    mine = await hass.data["zone"].async_create_item(
+        {"name": "My Starbucks", "latitude": p["lat"], "longitude": p["lon"], "radius": 60.0, "passive": False}
+    )
+    coordinator = entry.runtime_data.coordinator
+    with patch(OVERPASS, side_effect=fake_overpass):
+        await coordinator.async_refresh()
+        await hass.async_block_till_done(wait_background_tasks=True)
+    assert ours["id"] not in zones(hass)
+    assert mine["id"] in zones(hass)
+    assert by_name(hass, "Starbucks (Alpharetta Hwy)") and by_name(hass, "Cafe Solo")
+
+
+async def test_other_entries_zones_are_not_mistaken_for_hand_made(hass):
+    await _setup(hass, make_entry())
+    second = make_entry(poi_type="cafe", place_name="Roswell, Georgia")
+    second.add_to_hass(hass)  # a different entry over the very same places
+    with patch(OVERPASS, side_effect=fake_overpass):
+        assert await hass.config_entries.async_setup(second.entry_id)
+        await hass.async_block_till_done(wait_background_tasks=True)
+    assert second.state is ConfigEntryState.LOADED
+    assert sum(1 for z in zones(hass).values() if z["name"] != "Home") == 6

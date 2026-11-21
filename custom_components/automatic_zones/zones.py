@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from typing import Any
 
 from homeassistant.components import zone
@@ -40,6 +41,18 @@ _LOGGER = logging.getLogger(__name__)
 _COORD_TOLERANCE = 1e-6  # degrees (~0.1 m)
 _ADOPT_TOLERANCE = 1e-5  # degrees (~1 m)
 _LABEL_RETRIES = 5  # new zone entities register a moment after the zone is created
+_TWIN_MIN_DISTANCE = 50.0  # m; a hand-made zone this close to a place always counts
+
+
+def _distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    dy = (lat2 - lat1) * 111_320
+    dx = (lon2 - lon1) * 111_320 * math.cos(math.radians((lat1 + lat2) / 2))
+    return math.hypot(dx, dy)
+
+
+def _sync_lock(hass: HomeAssistant) -> asyncio.Lock:
+    """One lock for every entry, so entries never judge each other's zones mid-write."""
+    return hass.data.setdefault(f"{DOMAIN}_sync_lock", asyncio.Lock())
 
 
 def get_zone_collection(hass: HomeAssistant) -> Any | None:
@@ -74,7 +87,8 @@ class ZoneManager:
         self.hass = hass
         self.entry = entry
         self.coordinator = coordinator
-        self._lock = asyncio.Lock()
+        self._lock = _sync_lock(hass)
+        self.twins: dict[str, str] = {}  # place key -> hand-made zone id covering it
 
     @property
     def owned(self) -> dict[str, str]:
@@ -89,8 +103,11 @@ class ZoneManager:
         )
 
     def entity_id_for(self, key: str) -> str | None:
-        """Entity id of the zone for a POI (the registry may add a ``_2``)."""
-        if not (zone_id := self.owned.get(key)):
+        """Entity id of the zone for a POI (the registry may add a ``_2``).
+
+        A place already covered by a hand-made zone reports that zone.
+        """
+        if not (zone_id := self.owned.get(key) or self.twins.get(key)):
             return None
         return er.async_get(self.hass).async_get_entity_id("zone", "zone", zone_id)
 
@@ -113,7 +130,9 @@ class ZoneManager:
 
         items = {item["id"]: item for item in collection.async_items()}
         claimed = set(owned.values())
-        created = updated = adopted = removed = 0
+        everyone = await self._async_all_owned_ids() | claimed
+        created = updated = adopted = removed = skipped = 0
+        self.twins = {}
 
         for poi in pois:
             wanted = {
@@ -131,11 +150,24 @@ class ZoneManager:
                 zone_id = None
 
             if zone_id is None:
-                zone_id = self._find_adoptable(items, claimed, poi, wanted)
+                zone_id = self._find_adoptable(items, everyone | claimed, poi, wanted)
                 if zone_id:
                     owned[key] = zone_id
                     claimed.add(zone_id)
                     adopted += 1
+
+            # A zone you made by hand already covers this place: do not make a
+            # second one, and drop ours if it was made before yours existed.
+            twin = self._hand_made_twin(items, everyone | claimed, zone_id, wanted)
+            if twin:
+                self.twins[key] = twin
+                skipped += 1
+                if zone_id:
+                    if await self._delete(collection, zone_id):
+                        removed += 1
+                    owned.pop(key, None)
+                    claimed.discard(zone_id)
+                continue
 
             try:
                 if zone_id is None:
@@ -161,10 +193,11 @@ class ZoneManager:
         await self._async_apply_label()
 
         self.coordinator.schedule_save()
-        if created or updated or adopted or removed:
+        if created or updated or adopted or removed or skipped:
             _LOGGER.info(
-                "%s (%s): %d created, %d updated, %d adopted, %d removed",
-                data["poi_type_name"], data["place"], created, updated, adopted, removed,
+                "%s (%s): %d created, %d updated, %d adopted, %d removed, "
+                "%d skipped (already covered by a zone you made)",
+                data["poi_type_name"], data["place"], created, updated, adopted, removed, skipped,
             )
 
     def _wanted_label_id(self) -> str | None:
@@ -216,6 +249,43 @@ class ZoneManager:
         if pending:
             _LOGGER.debug("No entity yet for %d zone(s); label applied on next sync", len(pending))
         self.coordinator.cache["label"] = wanted
+
+    async def _async_all_owned_ids(self) -> set[str]:
+        """Zone ids created by ANY Automatic Zones entry (loaded or not yet loaded)."""
+        ids: set[str] = set()
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            runtime = getattr(entry, "runtime_data", None)
+            if runtime is not None:
+                ids.update(runtime.coordinator.cache["zones"].values())
+                continue
+            store: Store[dict[str, Any]] = Store(self.hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}")
+            ids.update(((await store.async_load()) or {}).get("zones", {}).values())
+        return ids
+
+    @staticmethod
+    def _hand_made_twin(
+        items: dict[str, dict[str, Any]],
+        owned_by_us: set[str],
+        own_zone_id: str | None,
+        wanted: dict[str, Any],
+    ) -> str | None:
+        """Id of a zone not made by this integration that covers the same place.
+
+        "Covers" means the centres are closer than the smaller of the two radii
+        (at least 50 m), so a neighbour's small zone across the street does not
+        count, but a zone you drew around the same store does - whatever it is
+        called.
+        """
+        for zone_id, item in items.items():
+            if zone_id in owned_by_us or zone_id == own_zone_id:
+                continue
+            reach = max(min(float(item.get("radius", 0)), wanted["radius"]), _TWIN_MIN_DISTANCE)
+            if _distance_m(
+                item.get("latitude", 0), item.get("longitude", 0),
+                wanted["latitude"], wanted["longitude"],
+            ) <= reach:
+                return zone_id
+        return None
 
     @staticmethod
     def _find_adoptable(
