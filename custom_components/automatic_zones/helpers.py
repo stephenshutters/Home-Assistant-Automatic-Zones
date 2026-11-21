@@ -22,6 +22,14 @@ def zone_prefix(entry: ConfigEntry) -> str:
     return str(entry_value(entry, CONF_ZONE_PREFIX, "") or "").strip()
 
 
+PREFIX_SEPARATOR = " - "
+
+
+def zone_label(prefix: str, name: str) -> str:
+    """``Movie Theater`` -> ``prefix - Movie Theater`` (just the name without a prefix)."""
+    return f"{prefix}{PREFIX_SEPARATOR}{name}" if prefix else name
+
+
 def slugify(text: str) -> str:
     """Rough slug used only as a fallback guess for a zone's entity id."""
     return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")[:255]
@@ -102,7 +110,7 @@ def distinguishing_suffixes(members: list[dict[str, Any]]) -> tuple[dict[str, st
 def _groups(pois: list[dict[str, Any]], prefix: str) -> dict[str, list[dict[str, Any]]]:
     groups: dict[str, list[dict[str, Any]]] = {}
     for poi in pois:
-        base = f"{prefix}_{poi['name']}" if prefix else poi["name"]
+        base = zone_label(prefix, poi["name"])
         groups.setdefault(base.casefold(), []).append(poi)
     return groups
 
@@ -127,8 +135,7 @@ def assign_zone_names(
 
     * Names that differ only in capitalization are first made identical
       (:func:`unify_name_case`).
-    * With a prefix the format is ``{prefix}_{name}`` (same as the original
-      integration). Without one it is just the POI's name.
+    * With a prefix the format is ``{prefix} - {name}``. Without one it is just the POI's name.
     * Several POIs often share a name (every Starbucks, every Walmart). By
       default they all keep that exact name. With ``distinguish_duplicates``
       each gets a readable suffix in brackets, such as its street, or its city
@@ -138,7 +145,7 @@ def assign_zone_names(
     unify_name_case(pois)
     groups = _groups(pois, prefix)
     for base_key, members in groups.items():
-        base = f"{prefix}_{members[0]['name']}" if prefix else members[0]["name"]
+        base = zone_label(prefix, members[0]["name"])
         for m in members:
             m["zone_name"] = base
     if not distinguish_duplicates:

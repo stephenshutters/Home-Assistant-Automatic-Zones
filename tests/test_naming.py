@@ -49,7 +49,7 @@ def test_different_names_and_spacing():
 def test_zone_names_are_identical_across_case_variants_even_without_suffixes():
     pois = [poi(1, "ALDI"), poi(2, "Aldi"), poi(3, "ALDI")]
     assign_zone_names(pois, "Groceries", False)
-    assert {p["zone_name"] for p in pois} == {"Groceries_ALDI"}
+    assert {p["zone_name"] for p in pois} == {"Groceries - ALDI"}
 
 
 # -- readable suffixes ------------------------------------------------------
@@ -118,7 +118,7 @@ def test_unique_names_are_never_suffixed_and_off_means_off():
 def test_prefix_combines_with_suffix():
     pois = [poi(1, street="A St"), poi(2, street="B St")]
     assign_zone_names(pois, "Groceries", True)
-    assert [p["zone_name"] for p in pois] == ["Groceries_Aldi (A St)", "Groceries_Aldi (B St)"]
+    assert [p["zone_name"] for p in pois] == ["Groceries - Aldi (A St)", "Groceries - Aldi (B St)"]
 
 
 def test_lookup_is_requested_only_for_groups_tags_cannot_resolve():

@@ -105,7 +105,7 @@ async def test_passive_toggle_is_applied(hass, passive):
 
 async def test_prefix_is_applied_when_given(hass):
     await _setup(hass, make_entry(zone_prefix="food"))
-    assert by_name(hass, "food_Cafe Solo")
+    assert by_name(hass, "food - Cafe Solo")
 
 
 async def test_hand_made_zone_with_same_name_is_never_touched(hass):
@@ -162,7 +162,7 @@ async def test_options_rename_and_flip_passive_in_place(hass):
         await hass.async_block_till_done(wait_background_tasks=True)
 
     assert set(zones(hass)) == ids_before  # same zones, not recreated
-    assert by_name(hass, "poi_Cafe Solo")["passive"] is True
+    assert by_name(hass, "poi - Cafe Solo")["passive"] is True
     assert hass.states.get("sensor.restaurants_near_roswell_georgia").attributes["zone_entity_ids"] == entity_ids_before
 
     # Clearing the prefix again really clears it (empty field is omitted by the UI).
@@ -240,7 +240,10 @@ async def test_legacy_v1_entry_is_migrated_and_zones_adopted(hass):
     assert entry.version == 2
     assert entry.data["passive"] is False and entry.data["auto_radius"] is False
     assert (entry.data["latitude"], entry.data["longitude"]) == (LAT0, LON0)
-    assert sum(z["name"] == "restaurant_Cafe Solo" for z in zones(hass).values()) == 1  # adopted, not duplicated
+    # Adopted (not duplicated) and renamed in place to the "prefix - Name" format.
+    assert sum(z["name"] == "restaurant - Cafe Solo" for z in zones(hass).values()) == 1
+    assert not any(z["name"] == "restaurant_Cafe Solo" for z in zones(hass).values())
+    assert zones(hass)[old["id"]]["name"] == "restaurant - Cafe Solo"
     assert entry.runtime_data.zones.owned["node/3"] == old["id"]
 
 
@@ -272,7 +275,7 @@ async def test_default_keeps_identical_names_but_separate_zones(hass):
 async def test_default_with_prefix_has_no_suffix_either(hass):
     await _setup(hass, make_entry(zone_prefix="food", distinguish_duplicates=False))
     names = sorted(z["name"] for z in zones(hass).values() if z["name"] != "Home")
-    assert names == ["food_Cafe Solo", "food_Starbucks", "food_Starbucks"]
+    assert names == ["food - Cafe Solo", "food - Starbucks", "food - Starbucks"]
 
 
 async def test_toggling_distinguish_renames_in_place(hass):
@@ -640,7 +643,7 @@ async def test_custom_name_with_prefix_and_street_suffixes(hass):
         await _setup(hass, entry)
     names = sorted(z["name"] for z in zones(hass).values() if z["name"] != "Home")
     # Cafe Solo has no address at all, so it keeps the plain custom name.
-    assert names == ["food_Coffee", "food_Coffee (Alpharetta Hwy)", "food_Coffee (Holcomb Bridge Rd)"]
+    assert names == ["food - Coffee", "food - Coffee (Alpharetta Hwy)", "food - Coffee (Holcomb Bridge Rd)"]
     assert not any("Starbucks" in n or "Cafe Solo" in n for n in names)
 
 

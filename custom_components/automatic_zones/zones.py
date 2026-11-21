@@ -34,7 +34,7 @@ from .const import (
     STORAGE_VERSION,
 )
 from .coordinator import POIZonesCoordinator
-from .helpers import entry_value
+from .helpers import PREFIX_SEPARATOR, entry_value
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -300,7 +300,10 @@ class ZoneManager:
         qualifies, so a hand-made zone that merely shares a name is left alone.
         """
         for zone_id, item in items.items():
-            if zone_id in claimed or item.get("name") != wanted["name"]:
+            # The original integration named prefixed zones "prefix_Name"; this
+            # one uses "prefix - Name". Both count as "the same name" here.
+            legacy = wanted["name"].replace(PREFIX_SEPARATOR, "_", 1)
+            if zone_id in claimed or item.get("name") not in (wanted["name"], legacy):
                 continue
             for lat, lon in (
                 (poi["latitude"], poi["longitude"]),

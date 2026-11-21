@@ -45,8 +45,8 @@ Automatically create Home Assistant zones for Points of Interest (POIs) near you
 
 | Setting | What it does |
 |---|---|
-| **Zone name prefix** (optional) | Empty: zones are named after the place (`Starbucks`). With a prefix: `prefix_Starbucks`. |
-| **Zone name** (optional) | Name every zone in the entry the same instead of using each place's real name, e.g. `Movie Theater` for all theaters. With a prefix: `prefix_Movie Theater`. With "Tell same-named places apart" on, each zone gets its street or city: `Movie Theater (Mansell Road)`. The sensor still lists the real name as `osm_name`. |
+| **Zone name prefix** (optional) | Empty: zones are named after the place (`Starbucks`). With a prefix: `prefix - Starbucks`. |
+| **Zone name** (optional) | Name every zone in the entry the same instead of using each place's real name, e.g. `Movie Theater` for all theaters. With a prefix: `prefix - Movie Theater`. With "Tell same-named places apart" on, each zone gets its street or city: `Movie Theater (Mansell Road)`. The sensor still lists the real name as `osm_name`. |
 | **Make all zones passive** | See below. |
 | **Size zones from OpenStreetMap footprints** | On by default. See [Zone sizing](#zone-sizing). |
 | **Refresh places automatically** | On by default. See [Refreshing](#refreshing). |

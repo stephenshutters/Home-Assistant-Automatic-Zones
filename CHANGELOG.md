@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0] - 2026-11-21
+
+### Changed
+- Prefixed zone names are now `prefix - Name` (was `prefix_Name`), e.g. `Groceries - Aldi (Mansell Road)`. Existing prefixed zones are renamed in place; entity ids and automations are not affected. Zones left by the original integration in the old `prefix_Name` form are still recognised and taken over.
+
 ## [2.6.0] - 2026-11-21
 
 ### Added

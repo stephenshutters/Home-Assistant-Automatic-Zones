@@ -51,6 +51,7 @@ from .helpers import (
     is_department,
     pois_needing_lookup,
     unify_name_case,
+    zone_label,
     zone_prefix,
 )
 from .osm import (
@@ -314,7 +315,7 @@ class POIZonesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             waiting = set(pois_needing_lookup(pois, prefix)) - set(self.cache["places"])
             for poi in pois:
                 if poi["key"] in waiting:
-                    poi["zone_name"] = f"{prefix}_{poi['name']}" if prefix else poi["name"]
+                    poi["zone_name"] = zone_label(prefix, poi["name"])
         return {
             "place": self.place_name,
             "latitude": self.latitude,

@@ -66,7 +66,7 @@
           "custom_name": "Zone name (optional)"
         },
         "data_description": {
-          "zone_prefix": "Optional. With a prefix, zones are named `prefix_Name`; empty means no prefix.",
+          "zone_prefix": "Optional. With a prefix, zones are named `prefix - Name`; empty means no prefix.",
           "label": "Pick an existing Home Assistant label to put on every zone created by this entry.",
           "new_label": "Type a name to create a new label (or reuse one with that name). If filled in, it is used instead of the label picked above.",
           "passive": "Off: active zones (a person's state becomes the zone name). On: passive zones (a person's state is never changed).",
@@ -75,7 +75,7 @@
           "zone_radius": "Used when OpenStreetMap has no building outline for a place, and when sizing from footprints is turned off.",
           "distinguish_duplicates": "Off: every place keeps its exact name (twenty Starbucks are all called `Starbucks`). On: places that share a name get a street or city added, e.g. `Starbucks (Holcomb Bridge Rd)`.",
           "auto_refresh": "On (recommended): once a week the integration re-downloads the list of places from OpenStreetMap, so a store that opens gets a zone, a closed one loses its zone, and a renamed one is renamed. Zone sizes (building and parking-lot outlines) are re-measured every 30 days, because they rarely change but mappers do fix them. Off: places and sizes found when you set this up are kept as they are, forever. Nothing is added, removed or resized on its own, and no internet requests are made after setup. You can still refresh by hand with the `automatic_zones.refresh` action, and changing the search settings fetches fresh data once.",
-          "custom_name": "Name every zone in this entry the same, instead of using each place's real name (e.g. `Movie Theater` for all theaters). Leave empty to use the real names. Combined with a prefix it becomes `prefix_Name`, and with \"Tell same-named places apart\" on, each gets its street or city, e.g. `Movie Theater (Mansell Road)`."
+          "custom_name": "Name every zone in this entry the same, instead of using each place's real name (e.g. `Movie Theater` for all theaters). Leave empty to use the real names. Combined with a prefix it becomes `prefix - Name`, and with \"Tell same-named places apart\" on, each gets its street or city, e.g. `Movie Theater (Mansell Road)`."
         }
       }
     },
@@ -117,7 +117,7 @@
           "zone_radius": "Radius used when no OpenStreetMap outline is available.",
           "distinguish_duplicates": "Off: every place keeps its exact name (twenty Starbucks are all called `Starbucks`). On: places that share a name get a street or city added, e.g. `Starbucks (Holcomb Bridge Rd)`.",
           "auto_refresh": "On (recommended): once a week the integration re-downloads the list of places from OpenStreetMap, so a store that opens gets a zone, a closed one loses its zone, and a renamed one is renamed. Zone sizes (building and parking-lot outlines) are re-measured every 30 days, because they rarely change but mappers do fix them. Off: places and sizes found when you set this up are kept as they are, forever. Nothing is added, removed or resized on its own, and no internet requests are made after setup. You can still refresh by hand with the `automatic_zones.refresh` action, and changing the search settings fetches fresh data once.",
-          "custom_name": "Name every zone in this entry the same, instead of using each place's real name (e.g. `Movie Theater` for all theaters). Leave empty to use the real names. Combined with a prefix it becomes `prefix_Name`, and with \"Tell same-named places apart\" on, each gets its street or city, e.g. `Movie Theater (Mansell Road)`."
+          "custom_name": "Name every zone in this entry the same, instead of using each place's real name (e.g. `Movie Theater` for all theaters). Leave empty to use the real names. Combined with a prefix it becomes `prefix - Name`, and with \"Tell same-named places apart\" on, each gets its street or city, e.g. `Movie Theater (Mansell Road)`."
         }
       }
     }
