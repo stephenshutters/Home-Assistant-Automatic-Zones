@@ -184,7 +184,7 @@ class POIZonesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     # -- update -------------------------------------------------------------
     def _signature(self) -> str:
         return (
-            f"{self.poi_type}|{self.business_name.casefold()}|{self.latitude:.5f}|"
+            f"{self.poi_type}|{self.business_name.casefold()}{'|w' if self.business_name else ''}|{self.latitude:.5f}|"
             f"{self.longitude:.5f}|{self.search_radius_km}"
         )
 

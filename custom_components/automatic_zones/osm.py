@@ -253,7 +253,8 @@ def build_business_query(name: str, lat: float, lon: float, radius_m: int) -> st
     Uses a bounding box (spatial index) instead of ``around``: a regex over
     every name in the database is only fast when the area is cut down first.
     """
-    pattern = business_name_regex(name)
+    # Whole words only: "Aldi" must not match "Spalding".
+    pattern = f"(^|[^[:alnum:]]){business_name_regex(name)}([^[:alnum:]]|$)"
     dlat = radius_m / 111_320
     dlon = radius_m / (111_320 * max(math.cos(math.radians(lat)), 0.01))
     box = f"({lat - dlat:.5f},{lon - dlon:.5f},{lat + dlat:.5f},{lon + dlon:.5f})"

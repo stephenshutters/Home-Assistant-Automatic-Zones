@@ -139,7 +139,16 @@ def test_business_regex_has_no_special_characters():
 
 def test_business_query_is_case_insensitive_name_or_brand_and_only_real_places():
     q = build_business_query("Walmart", 34.0, -84.0, 25000)
-    assert '["name"~"Walmart",i]' in q and '["brand"~"Walmart",i]' in q
+    assert '["name"~"(^|[^[:alnum:]])Walmart([^[:alnum:]]|$)",i]' in q and '["brand"~' in q
     assert '["shop"]' in q and '["amenity"]' in q and "(33.77" in q
     assert "parking" in q  # parking lots are excluded
     assert q.endswith("out tags center;")
+
+
+def test_business_pattern_matches_whole_words_only():
+    import re
+    q = build_business_query("Aldi", 34.0, -84.0, 5000)
+    pat = re.search(r'\["name"~"(.*?)",i\]', q).group(1).replace("[:alnum:]", "a-zA-Z0-9")
+    rx = re.compile(pat, re.I)
+    assert rx.search("ALDI") and rx.search("Aldi Foods") and rx.search("The Aldi")
+    assert not rx.search("Hughes Spalding Stadium") and not rx.search("Aldington")
