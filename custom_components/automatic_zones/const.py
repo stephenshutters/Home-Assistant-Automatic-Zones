@@ -7,6 +7,8 @@ DOMAIN: Final = "automatic_zones"
 # Configuration keys
 # ---------------------------------------------------------------------------
 CONF_POI_TYPE: Final = "poi_type"
+CONF_BUSINESS_NAME: Final = "business_name"  # set when poi_type == BUSINESS_TYPE
+BUSINESS_TYPE: Final = "business"  # pseudo type: places found by name, not category
 
 # Location (setup) -- either city/state/country or postal code/country.
 CONF_CITY: Final = "city"
@@ -47,6 +49,9 @@ USER_AGENT: Final = (
     "HomeAssistant-AutomaticZones/2.0 (+https://github.com/stephenshutters/Home-Assistant-Automatic-Zones)"
 )
 NOMINATIM_URL: Final = "https://nominatim.openstreetmap.org/search"
+NOMINATIM_REVERSE_URL: Final = "https://nominatim.openstreetmap.org/reverse"
+REVERSE_DELAY: Final = 1.2  # s between reverse-geocoding requests (Nominatim allows 1/s)
+MAX_REVERSE_PER_RUN: Final = 60
 # Tried in order; the next one is used if a request fails.
 OVERPASS_URLS: Final = (
     "https://overpass-api.de/api/interpreter",
@@ -366,6 +371,13 @@ POI_TYPES: Final = {
             {"amenity": "nursing_home"},
             {"healthcare": "nursing_home"},
         ],
+    },
+    # Found by typing a business name instead of choosing a category.
+    BUSINESS_TYPE: {
+        "name": "Business",
+        "icon": "mdi:store",
+        "radius": 100,
+        "filters": [],
     },
 }
 

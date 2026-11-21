@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -21,6 +22,7 @@ from .const import (
     MAX_RADIUS_FLOOR,
     MAX_RETRIES,
     MIN_ZONE_RADIUS,
+    NOMINATIM_REVERSE_URL,
     NOMINATIM_URL,
     OVERPASS_URLS,
     PARKING_ATTACH_DISTANCE,
@@ -172,6 +174,45 @@ async def async_geocode(
     return places
 
 
+async def async_reverse_geocode(
+    session: aiohttp.ClientSession, lat: float, lon: float, language: str = "en"
+) -> dict[str, str]:
+    """Street / neighbourhood / city of a point, for telling namesakes apart."""
+    params = {
+        "format": "jsonv2",
+        "lat": f"{lat:.6f}",
+        "lon": f"{lon:.6f}",
+        "zoom": 18,
+        "addressdetails": 1,
+        "accept-language": language,
+    }
+    try:
+        async with session.get(
+            NOMINATIM_REVERSE_URL,
+            params=params,
+            headers={"User-Agent": USER_AGENT},
+            timeout=aiohttp.ClientTimeout(total=20),
+        ) as response:
+            if response.status != 200:
+                raise OSMConnectionError(f"Nominatim returned HTTP {response.status}")
+            data = await response.json(content_type=None)
+    except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+        raise OSMConnectionError(str(err)) from err
+
+    addr = (data or {}).get("address") or {}
+
+    def first(*keys: str) -> str | None:
+        return next((addr[k] for k in keys if addr.get(k)), None)
+
+    found = {
+        "street": first("road", "pedestrian", "footway"),
+        "housenumber": first("house_number"),
+        "suburb": first("suburb", "neighbourhood", "quarter"),
+        "city": first("city", "town", "village", "municipality", "hamlet"),
+    }
+    return {k: v for k, v in found.items() if v}
+
+
 # ---------------------------------------------------------------------------
 # Overpass (queries)
 # ---------------------------------------------------------------------------
@@ -183,6 +224,37 @@ def build_poi_query(filters: list[dict[str, str]], lat: float, lon: float, radiu
         for kind in ("node", "way", "relation"):
             parts.append(f"{kind}{tags}(around:{radius_m},{lat},{lon});")
     return f"[out:json][timeout:60];({''.join(parts)});out tags center;"
+
+
+_NOT_A_PLACE = "parking|parking_space|parking_entrance|bicycle_parking|motorcycle_parking|waste_basket|bench"
+_PLACE_SELECTORS = (
+    '["shop"]',
+    f'["amenity"]["amenity"!~"^({_NOT_A_PLACE})$"]',
+    '["office"]',
+    '["tourism"]',
+    '["leisure"]',
+    '["craft"]',
+    '["healthcare"]',
+)
+
+
+def business_name_regex(name: str) -> str:
+    """Case-insensitive "contains" pattern for a business name.
+
+    Anything that is not a letter, digit or space becomes ``.`` so users need
+    not worry about regex syntax, and ``Trader Joe's`` also finds ``Trader Joe’s``.
+    """
+    return re.sub(r"[^\w\s]|_", ".", " ".join(name.split()))
+
+
+def build_business_query(name: str, lat: float, lon: float, radius_m: int) -> str:
+    """Every shop/amenity/office ... whose name or brand contains ``name``."""
+    pattern = business_name_regex(name)
+    around = f"(around:{radius_m},{lat},{lon})"
+    parts = "".join(
+        f'nwr[~"^(name|brand)$"~"{pattern}",i]{sel}{around};' for sel in _PLACE_SELECTORS
+    )
+    return f"[out:json][timeout:60];({parts});out tags center;"
 
 
 def build_geometry_query(keys: list[str]) -> str:

@@ -36,7 +36,7 @@ Automatically create Home Assistant zones for Points of Interest (POIs) near you
 
 1. Go to **Settings** → **Devices & Services**
 2. Click **Add Integration** and search for "Automatic Zones"
-3. Choose the **POI type**
+3. Choose the **POI type** - or pick **A specific business** and type its name (e.g. `Walmart`) to find only that business instead of a whole category
 4. Choose how to identify the place:
    - **City, state and country** (state is optional but recommended - there are dozens of Springfields), or
    - **ZIP / postal code and country** (a postal code is only unique within a country)
@@ -64,7 +64,15 @@ With active zones, names are shown verbatim as the person's state, so choose a p
 
 By default places that share a name keep **exactly that name**: twenty Starbucks are twenty zones all called `Starbucks` (Home Assistant gives them distinct entity ids - `zone.starbucks`, `zone.starbucks_2`, ... - and `zone_entity_ids` on the sensor lists the real ones). With active zones a person standing in any of them has the state `Starbucks`.
 
-Turn on **Tell same-named places apart** to get `Starbucks (Holcomb Bridge Rd)` instead - the street, or the OpenStreetMap id when streets are missing or identical. Uniquely named places are never suffixed. The setting works the same with or without a prefix and can be switched any time; zones are renamed in place.
+Turn on **Tell same-named places apart** to get `Starbucks (Holcomb Bridge Rd)` instead. The suffix is the first of these that is different for every place in the group: street, street and number, neighbourhood, city, street and city. Missing details are looked up from OpenStreetMap's Nominatim service in the background (about one request per second, cached for good), so right after setup the zones briefly keep their plain name and are then renamed in place. OpenStreetMap ids are never shown; as a last resort places are numbered (`Starbucks (#2)`). Uniquely named places are never suffixed. The setting works the same with or without a prefix and can be switched any time.
+
+### Consistent capitalization
+
+OpenStreetMap often spells one business several ways (`ALDI`, `Aldi`). Places whose names differ only in capitalization are given **one** spelling: the one most places use, and on a tie the mixed-case one. This applies to zone names, the sensor and every refresh, so existing zones are renamed in place.
+
+### Searching for one business
+
+Choose **A specific business** and type a name. Matching ignores capitalization and punctuation, and checks both the place's name and its brand, so `Walmart` finds Walmarts and not every grocery store. The business name cannot be changed later; add a second entry for another business.
 
 ## Available POI Types
 

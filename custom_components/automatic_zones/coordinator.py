@@ -14,7 +14,9 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
+    BUSINESS_TYPE,
     CONF_AUTO_RADIUS,
+    CONF_BUSINESS_NAME,
     CONF_CITY,
     CONF_DISTINGUISH_DUPLICATES,
     CONF_LATITUDE,
@@ -28,19 +30,29 @@ from .const import (
     DEFAULT_SEARCH_RADIUS,
     DOMAIN,
     GEOMETRY_BATCH_SIZE,
+    MAX_REVERSE_PER_RUN,
     POI_CACHE_TTL,
     POI_TYPES,
     RADIUS_ALGORITHM_VERSION,
     RADIUS_CACHE_TTL,
     REQUEST_STAGGER_DELAY,
+    REVERSE_DELAY,
     STORAGE_VERSION,
     UPDATE_INTERVAL,
 )
 from .geometry import haversine_m
-from .helpers import assign_zone_names, entry_value, zone_prefix
+from .helpers import (
+    assign_zone_names,
+    entry_value,
+    pois_needing_lookup,
+    unify_name_case,
+    zone_prefix,
+)
 from .osm import (
     OSMConnectionError,
     async_overpass,
+    async_reverse_geocode,
+    build_business_query,
     build_geometry_query,
     build_poi_query,
     compute_footprints,
@@ -49,11 +61,28 @@ from .osm import (
 _LOGGER = logging.getLogger(__name__)
 
 _RATE_KEY = f"{DOMAIN}_overpass_rate"
+_REVERSE_RATE_KEY = f"{DOMAIN}_nominatim_rate"
+
+# Icon for places found by business name, from their OSM tags.
+_AMENITY_ICONS = {
+    "fuel": "mdi:gas-station", "restaurant": "mdi:food", "fast_food": "mdi:food",
+    "cafe": "mdi:coffee", "pharmacy": "mdi:pharmacy", "bank": "mdi:bank",
+    "hospital": "mdi:hospital-building", "clinic": "mdi:medical-bag",
+}
+_CART_SHOPS = {"supermarket", "greengrocer", "convenience", "department_store", "mall", "variety_store"}
+
+
+def _business_icon(tags: dict[str, str]) -> str:
+    if icon := _AMENITY_ICONS.get(tags.get("amenity", "")):
+        return icon
+    if tags.get("shop") in _CART_SHOPS:
+        return "mdi:cart"
+    return "mdi:store"
 
 # Tags worth keeping in the on-disk cache (keeps the cache file small).
 _KEEP_TAGS = {
     "name", "phone", "website", "opening_hours", "brand", "operator", "emergency",
-    "beds", "healthcare", "cuisine", "capacity", "building",
+    "beds", "healthcare", "cuisine", "capacity", "building", "shop", "amenity",
 }
 _KEEP_PREFIXES = ("addr:", "contact:", "fuel:", "socket:")
 
@@ -61,6 +90,11 @@ _KEEP_PREFIXES = ("addr:", "contact:", "fuel:", "socket:")
 def _rate_state(hass: HomeAssistant) -> dict[str, Any]:
     """Process-wide Overpass lock + timestamp of the previous request."""
     return hass.data.setdefault(_RATE_KEY, {"lock": asyncio.Lock(), "last": 0.0})
+
+
+def _reverse_state(hass: HomeAssistant) -> dict[str, Any]:
+    """Process-wide Nominatim lock + timestamp (usage policy: 1 request/second)."""
+    return hass.data.setdefault(_REVERSE_RATE_KEY, {"lock": asyncio.Lock(), "last": 0.0})
 
 
 def _trim(element: dict[str, Any]) -> dict[str, Any]:
@@ -90,6 +124,13 @@ class POIZonesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=timedelta(seconds=UPDATE_INTERVAL),
         )
         self.poi_type: str = entry.data[CONF_POI_TYPE]
+        self.business_name: str = (entry.data.get(CONF_BUSINESS_NAME) or "").strip()
+        # What the entry looks for, for titles, logs and sensor attributes.
+        self.type_name: str = (
+            self.business_name
+            if self.poi_type == BUSINESS_TYPE and self.business_name
+            else POI_TYPES[self.poi_type]["name"]
+        )
         self.latitude: float = entry.data[CONF_LATITUDE]
         self.longitude: float = entry.data[CONF_LONGITUDE]
         self.place_name: str = (
@@ -101,9 +142,12 @@ class POIZonesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         # pois: raw Overpass elements; radii: footprint results per POI key;
         # zones: POI key -> id of the zone WE created in the zone collection.
-        self.cache: dict[str, Any] = {"pois": None, "radii": {}, "zones": {}, "label": None}
+        self.cache: dict[str, Any] = {
+            "pois": None, "radii": {}, "zones": {}, "label": None, "places": {},
+        }
         self._elements: list[dict[str, Any]] = []
         self._enrich_task: asyncio.Task | None = None
+        self._places_task: asyncio.Task | None = None
 
     # -- live options -------------------------------------------------------
     @property
@@ -126,6 +170,7 @@ class POIZonesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.cache.setdefault("radii", {})
             self.cache.setdefault("zones", {})
             self.cache.setdefault("label", None)
+            self.cache.setdefault("places", {})
 
     async def async_flush_store(self) -> None:
         await self._store.async_save(self.cache)
@@ -139,7 +184,8 @@ class POIZonesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     # -- update -------------------------------------------------------------
     def _signature(self) -> str:
         return (
-            f"{self.poi_type}|{self.latitude:.5f}|{self.longitude:.5f}|{self.search_radius_km}"
+            f"{self.poi_type}|{self.business_name.casefold()}|{self.latitude:.5f}|"
+            f"{self.longitude:.5f}|{self.search_radius_km}"
         )
 
     async def _rate_limited_overpass(self, query: str) -> list[dict[str, Any]]:
@@ -172,13 +218,20 @@ class POIZonesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if fresh:
             self._elements = cached["elements"]
         else:
-            poi_config = POI_TYPES[self.poi_type]
-            query = build_poi_query(
-                poi_config["filters"],
-                self.latitude,
-                self.longitude,
-                self.search_radius_km * 1000,
-            )
+            if self.poi_type == BUSINESS_TYPE:
+                query = build_business_query(
+                    self.business_name,
+                    self.latitude,
+                    self.longitude,
+                    self.search_radius_km * 1000,
+                )
+            else:
+                query = build_poi_query(
+                    POI_TYPES[self.poi_type]["filters"],
+                    self.latitude,
+                    self.longitude,
+                    self.search_radius_km * 1000,
+                )
             try:
                 raw = await self._rate_limited_overpass(query)
             except OSMConnectionError as err:
@@ -198,9 +251,13 @@ class POIZonesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if data["pois"]:
             live = {p["key"] for p in data["pois"]}
             self.cache["radii"] = {k: v for k, v in self.cache["radii"].items() if k in live}
+            self.cache["places"] = {k: v for k, v in self.cache["places"].items() if k in live}
             self.schedule_save()
         self._schedule_enrichment()
-        return data
+        self._schedule_places()
+        # Background tasks may start eagerly and finish before this returns;
+        # rebuild so their results are not overwritten by the older snapshot.
+        return self._build_data()
 
     # -- building the data the rest of the integration uses ----------------
     def _radius_entry(self, key: str) -> dict[str, Any] | None:
@@ -231,21 +288,27 @@ class POIZonesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             else:
                 poi["radius_source"] = "pending"
                 pending += 1
-        assign_zone_names(
-            pois,
-            zone_prefix(self.config_entry),
-            bool(
-                entry_value(
-                    self.config_entry, CONF_DISTINGUISH_DUPLICATES, DEFAULT_DISTINGUISH_DUPLICATES
-                )
-            ),
+        prefix = zone_prefix(self.config_entry)
+        distinguish = bool(
+            entry_value(
+                self.config_entry, CONF_DISTINGUISH_DUPLICATES, DEFAULT_DISTINGUISH_DUPLICATES
+            )
         )
+        assign_zone_names(pois, prefix, distinguish)
+        if distinguish:
+            # Zone entity ids come from the name a zone is created with. While a
+            # namesake's address is still being looked up it keeps its plain
+            # name (not a stop-gap like "#2"); it is renamed in place afterwards.
+            waiting = set(pois_needing_lookup(pois, prefix)) - set(self.cache["places"])
+            for poi in pois:
+                if poi["key"] in waiting:
+                    poi["zone_name"] = f"{prefix}_{poi['name']}" if prefix else poi["name"]
         return {
             "place": self.place_name,
             "latitude": self.latitude,
             "longitude": self.longitude,
             "poi_type": self.poi_type,
-            "poi_type_name": POI_TYPES[self.poi_type]["name"],
+            "poi_type_name": self.type_name,
             "pois": pois,
             "pending_radius": pending,
         }
@@ -297,6 +360,62 @@ class POIZonesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception:  # noqa: BLE001 - background task must never crash HA
             _LOGGER.exception("Unexpected error while sizing zones from footprints")
 
+    # -- phase 3: street / city for same-named places (background) ----------
+    def _schedule_places(self) -> None:
+        if not bool(
+            entry_value(self.config_entry, CONF_DISTINGUISH_DUPLICATES, DEFAULT_DISTINGUISH_DUPLICATES)
+        ):
+            return
+        if self._places_task and not self._places_task.done():
+            return
+        self._places_task = self.config_entry.async_create_background_task(
+            self.hass, self._async_resolve_places(), f"{DOMAIN}_places_{self.config_entry.entry_id}"
+        )
+
+    async def _async_resolve_places(self) -> None:
+        """Reverse-geocode namesakes that OSM tags cannot tell apart.
+
+        Only places that share a name AND lack enough address tags are looked
+        up, one request per 1.2 s, and every answer is cached for good.
+        """
+        try:
+            pois = self._process_elements(self._elements)
+            wanted = set(pois_needing_lookup(pois, zone_prefix(self.config_entry)))
+            todo = [p for p in pois if p["key"] in wanted and p["key"] not in self.cache["places"]]
+            if not todo:
+                return
+            todo = todo[:MAX_REVERSE_PER_RUN]
+            _LOGGER.debug("Looking up addresses of %d places that share a name", len(todo))
+            state = _reverse_state(self.hass)
+            session = async_get_clientsession(self.hass)
+            for done, poi in enumerate(todo, 1):
+                async with state["lock"]:
+                    wait = state["last"] + REVERSE_DELAY - time.monotonic()
+                    if wait > 0:
+                        await asyncio.sleep(wait)
+                    try:
+                        found = await async_reverse_geocode(
+                            session, poi["latitude"], poi["longitude"], self.hass.config.language
+                        )
+                    except OSMConnectionError as err:
+                        _LOGGER.warning("Address lookup failed (%s); will retry on next refresh", err)
+                        break
+                    finally:
+                        state["last"] = time.monotonic()
+                self.cache["places"][poi["key"]] = found
+                if done % 5 == 0 or done == len(todo):
+                    self.schedule_save()
+                    self.async_set_updated_data(self._build_data())
+            else:
+                return
+            # A failure broke out of the loop: publish what we have.
+            self.schedule_save()
+            self.async_set_updated_data(self._build_data())
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - background task must never crash HA
+            _LOGGER.exception("Unexpected error while looking up addresses")
+
     # -- phase 1 processing -------------------------------------------------
     def _process_elements(self, elements: list[dict[str, Any]]) -> list[dict[str, Any]]:
         poi_config = POI_TYPES[self.poi_type]
@@ -327,13 +446,25 @@ class POIZonesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "latitude": lat,
                 "longitude": lon,
                 "poi_type": self.poi_type,
-                "poi_type_name": poi_config["name"],
-                "icon": poi_config["icon"],
+                "poi_type_name": self.type_name,
+                "icon": (
+                    _business_icon(tags) if self.poi_type == BUSINESS_TYPE else poi_config["icon"]
+                ),
                 "zone_radius": radius,
                 "radius_source": "fixed",
             }
-            if street := tags.get("addr:street"):
-                poi["street"] = street
+            # Address parts, used to tell same-named places apart. Whatever OSM
+            # lacks is filled in from reverse geocoding (see _async_resolve_places).
+            found = {
+                "street": tags.get("addr:street"),
+                "housenumber": tags.get("addr:housenumber"),
+                "suburb": tags.get("addr:suburb") or tags.get("addr:neighbourhood"),
+                "city": tags.get("addr:city") or tags.get("addr:town") or tags.get("addr:village"),
+            }
+            looked_up = self.cache["places"].get(poi["key"]) or {}
+            for field, value in found.items():
+                if value := value or looked_up.get(field):
+                    poi[field] = value
             if addr := self._build_address(tags):
                 poi["address"] = addr
             if phone := tags.get("phone") or tags.get("contact:phone"):
@@ -354,6 +485,7 @@ class POIZonesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             pois.append(poi)
 
         pois = self._dedupe(pois)
+        unify_name_case(pois)
         pois.sort(key=lambda p: (p["name"].casefold(), p["key"]))
         return pois
 

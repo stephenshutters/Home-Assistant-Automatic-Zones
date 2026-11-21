@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -26,35 +27,126 @@ def slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")[:255]
 
 
+def _single_case(text: str) -> bool:
+    """True for ALL CAPS or all lower case (less deliberate than Title Case)."""
+    return text == text.upper() or text == text.lower()
+
+
+def unify_name_case(pois: list[dict[str, Any]]) -> None:
+    """Give places whose names differ only in capitalization one spelling.
+
+    OpenStreetMap contributors spell the same chain differently (``ALDI`` /
+    ``Aldi``). The most common spelling wins; on a tie, one that is not ALL CAPS
+    or all lower case is preferred, then alphabetical order (so the result never
+    depends on the order the places arrive in). Extra spaces are collapsed.
+    """
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for poi in pois:
+        poi["name"] = " ".join(str(poi["name"]).split())
+        groups.setdefault(poi["name"].casefold(), []).append(poi)
+    for members in groups.values():
+        counts = Counter(m["name"] for m in members)
+        if len(counts) == 1:
+            continue
+        canonical = min(counts, key=lambda v: (-counts[v], _single_case(v), v))
+        for m in members:
+            m["name"] = canonical
+
+
+def _levels(poi: dict[str, Any]) -> list[str | None]:
+    """Labels that could tell a place from its namesakes, simplest first."""
+    street = poi.get("street")
+    number = poi.get("housenumber")
+    suburb = poi.get("suburb")
+    city = poi.get("city")
+    return [
+        street or None,
+        f"{number} {street}" if street and number else None,
+        suburb or None,
+        city or None,
+        f"{street}, {city}" if street and city else None,
+        f"{number} {street}, {city}" if street and number and city else None,
+    ]
+
+
+def distinguishing_suffixes(members: list[dict[str, Any]]) -> tuple[dict[str, str], bool]:
+    """Readable suffix per place (keyed by POI key) for places sharing a name.
+
+    Uses the first label (street, then house number + street, then
+    neighbourhood, then city, then street + city ...) that is available for
+    *every* place and different for each. If none manages that, each place gets
+    its most specific label and any that still collide are numbered
+    (``#1``, ``#2``). The second return value says whether a label alone was
+    enough (False means more address data would help).
+    """
+    levels = {m["key"]: _levels(m) for m in members}
+    for i in range(len(next(iter(levels.values())))):
+        labels = [levels[m["key"]][i] for m in members]
+        if all(labels) and len({label.casefold() for label in labels}) == len(labels):
+            return {m["key"]: label for m, label in zip(members, labels)}, True
+
+    best = {
+        key: next((lv[i] for i in (5, 4, 1, 0, 3, 2) if lv[i]), "") for key, lv in levels.items()
+    }
+    colliding: dict[str, list[str]] = {}
+    for key in sorted(best):
+        colliding.setdefault(best[key].casefold(), []).append(key)
+    suffixes = dict(best)
+    for keys in colliding.values():
+        if len(keys) > 1:
+            for n, key in enumerate(keys, 1):
+                suffixes[key] = f"{best[key]}, #{n}" if best[key] else f"#{n}"
+    return suffixes, False
+
+
+def _groups(pois: list[dict[str, Any]], prefix: str) -> dict[str, list[dict[str, Any]]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for poi in pois:
+        base = f"{prefix}_{poi['name']}" if prefix else poi["name"]
+        groups.setdefault(base.casefold(), []).append(poi)
+    return groups
+
+
+def pois_needing_lookup(pois: list[dict[str, Any]], prefix: str) -> list[str]:
+    """Keys of same-named places that OSM tags alone cannot tell apart.
+
+    Those are worth a reverse-geocoding request to learn their street / city.
+    """
+    unify_name_case(pois)
+    keys: list[str] = []
+    for members in _groups(pois, prefix).values():
+        if len(members) > 1 and not distinguishing_suffixes(members)[1]:
+            keys.extend(m["key"] for m in members)
+    return keys
+
+
 def assign_zone_names(
     pois: list[dict[str, Any]], prefix: str, distinguish_duplicates: bool = False
 ) -> None:
     """Set ``poi["zone_name"]`` for every POI, making duplicates distinct.
 
+    * Names that differ only in capitalization are first made identical
+      (:func:`unify_name_case`).
     * With a prefix the format is ``{prefix}_{name}`` (same as the original
       integration). Without one it is just the POI's name.
     * Several POIs often share a name (every Starbucks, every Walmart). By
       default they all keep that exact name. With ``distinguish_duplicates``
-      each of them gets a suffix instead: its street if that tells them
-      apart, otherwise its OpenStreetMap id. POIs with a unique name are
-      never suffixed, so their names (and entity ids) stay stable.
+      each gets a readable suffix in brackets, such as its street, or its city
+      (see :func:`distinguishing_suffixes`). Uniquely named places are never
+      suffixed, so their names (and entity ids) stay stable.
     """
-    groups: dict[str, list[dict[str, Any]]] = {}
-    for poi in pois:
-        base = f"{prefix}_{poi['name']}" if prefix else poi["name"]
-        poi["zone_name"] = base
-        groups.setdefault(base.casefold(), []).append(poi)
-
+    unify_name_case(pois)
+    groups = _groups(pois, prefix)
+    for base_key, members in groups.items():
+        base = f"{prefix}_{members[0]['name']}" if prefix else members[0]["name"]
+        for m in members:
+            m["zone_name"] = base
     if not distinguish_duplicates:
         return
     for members in groups.values():
         if len(members) == 1:
             continue
-        streets = [(m.get("street") or "").casefold() for m in members]
-        streets_distinct = all(streets) and len(set(streets)) == len(streets)
+        suffixes, _ = distinguishing_suffixes(members)
         for m in members:
-            if streets_distinct:
-                suffix = m["street"]
-            else:
-                suffix = f"{m['osm_type'][0]}{m['osm_id']}"
-            m["zone_name"] = f"{m['zone_name']} ({suffix})"
+            if suffix := suffixes.get(m["key"]):
+                m["zone_name"] = f"{m['zone_name']} ({suffix})"

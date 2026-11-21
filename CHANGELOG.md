@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-11-20
+
+### Added
+- **Search for one business.** Pick "A specific business" when adding the integration and type a name such as `Walmart`; only that business is found instead of a whole category.
+- **Consistent capitalization.** Names that differ only in case (`ALDI` / `Aldi`) now share one spelling (the most common one; mixed case wins a tie). Existing zones are renamed in place.
+
+### Changed
+- "Tell same-named places apart" now uses readable suffixes - street, street and number, neighbourhood, city, or street and city - never OpenStreetMap ids. Missing details are looked up from Nominatim in the background (about 1 request/second, cached); `(#2)` numbering is only a last resort.
+
 ## [2.1.2] - 2026-11-20
 
 ### Fixed

@@ -2,10 +2,20 @@
   "config": {
     "step": {
       "user": {
-        "title": "POI type",
-        "description": "Choose which kind of place to create zones for. Add the integration again for each additional type.",
+        "title": "What should we create zones for?",
+        "description": "Pick a category (every grocery store, every pharmacy...), or choose **A specific business** to type a name such as `Walmart` and only create zones for places with that name. Add the integration again for each additional type or business.",
         "data": {
-          "poi_type": "POI type"
+          "poi_type": "Category or specific business"
+        }
+      },
+      "business": {
+        "title": "Business name",
+        "description": "Only places whose name or brand **contains** this text are used, ignoring capitalization. `Walmart` finds `Walmart Supercenter` and `Walmart Neighborhood Market`; use `Walmart Supercenter` to be narrower.",
+        "data": {
+          "business_name": "Business name"
+        },
+        "data_description": {
+          "business_name": "For example `Walmart`, `Publix` or `Trader Joe's`."
         }
       },
       "location_method": {
@@ -69,7 +79,8 @@
       "cannot_connect": "Could not reach OpenStreetMap (Nominatim). Try again in a moment.",
       "location_not_found": "No place matched that. Check the spelling, or add the state/region.",
       "city_required": "Enter a city.",
-      "postal_required": "Enter a ZIP / postal code."
+      "postal_required": "Enter a ZIP / postal code.",
+      "business_required": "Enter the business name (at least 2 characters)."
     },
     "abort": {
       "already_configured": "This type of place is already set up for that location."

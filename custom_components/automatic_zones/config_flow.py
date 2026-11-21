@@ -27,6 +27,8 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
+    BUSINESS_TYPE,
+    CONF_BUSINESS_NAME,
     CONF_AUTO_RADIUS,
     CONF_CITY,
     CONF_COUNTRY,
@@ -51,7 +53,7 @@ from .const import (
     DOMAIN,
     POI_TYPES,
 )
-from .helpers import entry_value
+from .helpers import entry_value, slugify
 from .osm import OSMConnectionError, Place, async_geocode
 
 _LOGGER = logging.getLogger(__name__)
@@ -76,6 +78,7 @@ class POIZonesConfigFlow(ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         self._poi_type: str | None = None
+        self._business_name = ""
         self._postal_mode = False
         self._location_fields: dict[str, str] = {}
         self._places: list[Place] = []
@@ -85,11 +88,15 @@ class POIZonesConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
             self._poi_type = user_input[CONF_POI_TYPE]
+            if self._poi_type == BUSINESS_TYPE:
+                return await self.async_step_business()
+            self._business_name = ""
             return await self.async_step_location_method()
 
-        options = [
+        options = [{"value": BUSINESS_TYPE, "label": "A specific business (I'll type its name)"}] + [
             {"value": key, "label": cfg["name"]}
             for key, cfg in sorted(POI_TYPES.items(), key=lambda kv: kv[1]["name"])
+            if key != BUSINESS_TYPE
         ]
         return self.async_show_form(
             step_id="user",
@@ -100,6 +107,24 @@ class POIZonesConfigFlow(ConfigFlow, domain=DOMAIN):
                     )
                 }
             ),
+        )
+
+    # -- 1b. a specific business instead of a category ------------------------
+    async def async_step_business(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            self._business_name = " ".join((user_input.get(CONF_BUSINESS_NAME) or "").split())
+            if len(self._business_name) < 2:
+                errors[CONF_BUSINESS_NAME] = "business_required"
+            else:
+                return await self.async_step_location_method()
+        return self.async_show_form(
+            step_id="business",
+            data_schema=self.add_suggested_values_to_schema(
+                vol.Schema({vol.Required(CONF_BUSINESS_NAME): TextSelector()}),
+                {CONF_BUSINESS_NAME: self._business_name},
+            ),
+            errors=errors,
         )
 
     # -- 2. where: city/state/country or postal code -------------------------
@@ -207,7 +232,8 @@ class POIZonesConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def _async_select_place(self, place: Place) -> ConfigFlowResult:
         self._place = place
-        await self.async_set_unique_id(f"{self._poi_type}_{place.unique_key}")
+        what = f"business_{slugify(self._business_name)}" if self._business_name else self._poi_type
+        await self.async_set_unique_id(f"{what}_{place.unique_key}")
         self._abort_if_unique_id_configured()
         return await self.async_step_settings()
 
@@ -219,6 +245,7 @@ class POIZonesConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             data = {
                 CONF_POI_TYPE: self._poi_type,
+                **({CONF_BUSINESS_NAME: self._business_name} if self._business_name else {}),
                 CONF_LATITUDE: self._place.latitude,
                 CONF_LONGITUDE: self._place.longitude,
                 CONF_PLACE_NAME: self._place.short_name,
@@ -233,7 +260,8 @@ class POIZonesConfigFlow(ConfigFlow, domain=DOMAIN):
                 CONF_ZONE_RADIUS: int(user_input[CONF_ZONE_RADIUS]),
             }
             return self.async_create_entry(
-                title=f"{poi_config['name']} - {self._place.short_name}", data=data
+                title=f"{self._business_name or poi_config['name']} - {self._place.short_name}",
+                data=data
             )
 
         default_search = DEFAULT_SEARCH_RADIUS_POSTAL if self._postal_mode else DEFAULT_SEARCH_RADIUS
@@ -254,7 +282,7 @@ class POIZonesConfigFlow(ConfigFlow, domain=DOMAIN):
                 }
             ),
             description_placeholders={
-                "poi_type": poi_config["name"],
+                "poi_type": self._business_name or poi_config["name"],
                 "place": self._place.display_name,
             },
         )

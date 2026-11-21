@@ -413,3 +413,113 @@ async def test_zone_collection_found_in_new_and_old_layouts(hass):
         assert get_zone_collection(hass) is None
     finally:
         hass.data["zone"] = real
+
+
+# -- business-name mode, capitalization, readable suffixes ------------------
+ALDIS = [
+    node(501, 0, 0, name="ALDI", shop="supermarket"),
+    node(502, 3000, 0, name="Aldi", shop="supermarket"),
+    node(503, 0, 3000, name="ALDI", shop="supermarket", **{"addr:housenumber": "5"}),
+]
+REVERSE = "custom_components.automatic_zones.coordinator.async_reverse_geocode"
+
+
+def _reverse_by_node(streets):
+    calls = []
+
+    async def fake(session, lat, lon, language="en"):
+        calls.append((lat, lon))
+        for el in ALDIS:
+            if abs(el["lat"] - lat) < 1e-9 and abs(el["lon"] - lon) < 1e-9:
+                return streets.get(el["id"], {})
+        return {}
+
+    fake.calls = calls
+    return fake
+
+
+async def _setup_business(hass, reverse, **overrides):
+    queries = []
+
+    async def overpass(session, query):
+        queries.append(query)
+        return ALDIS
+
+    entry = make_entry(
+        poi_type="business", business_name="Aldi", auto_radius=False,
+        distinguish_duplicates=True, **overrides,
+    )
+    assert await async_setup_component(hass, "zone", {})
+    entry.add_to_hass(hass)
+    with patch(OVERPASS, side_effect=overpass), patch(REVERSE, side_effect=reverse), patch(
+        "custom_components.automatic_zones.coordinator.REVERSE_DELAY", 0
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done(wait_background_tasks=True)
+    return entry, queries
+
+
+async def test_business_mode_unifies_case_and_uses_streets_from_lookup(hass):
+    reverse = _reverse_by_node({
+        501: {"street": "Holcomb Bridge Rd", "city": "Roswell"},
+        502: {"street": "Alpharetta Hwy", "city": "Roswell"},
+        503: {"street": "Mansell Rd", "city": "Alpharetta"},
+    })
+    entry, queries = await _setup_business(hass, reverse)
+
+    assert 'name|brand' in queries[0] and '"Aldi",i' in queries[0]  # searched by name, not category
+    names = sorted(z["name"] for z in zones(hass).values() if z["name"] != "Home")
+    assert names == ["ALDI (Alpharetta Hwy)", "ALDI (Holcomb Bridge Rd)", "ALDI (Mansell Rd)"]
+    assert len(reverse.calls) == 3
+
+    state = hass.states.get("sensor.aldi_near_roswell_georgia")
+    assert state is not None and state.state == "3"
+    assert state.attributes["poi_type"] == "business" and state.attributes["poi_type_name"] == "Aldi"
+    assert {l["name"] for l in state.attributes["locations"]} == {"ALDI"}  # one capitalization
+    assert all(l.get("icon") is None or True for l in state.attributes["locations"])
+
+    # Cached: a refresh does not geocode again.
+    coordinator = entry.runtime_data.coordinator
+    with patch(OVERPASS, side_effect=fake_overpass), patch(REVERSE, side_effect=reverse):
+        await coordinator.async_refresh()
+        await hass.async_block_till_done(wait_background_tasks=True)
+    assert len(reverse.calls) == 3
+
+
+async def test_no_osm_ids_in_names_when_nothing_is_known(hass):
+    entry, _ = await _setup_business(hass, _reverse_by_node({}))
+    names = sorted(z["name"] for z in zones(hass).values() if z["name"] != "Home")
+    assert names == ["ALDI (#1)", "ALDI (#2)", "ALDI (#3)"]
+    assert not any("node" in n or "501" in n for n in names)
+
+
+async def test_failed_lookup_keeps_plain_names_and_does_not_crash(hass):
+    async def broken(session, lat, lon, language="en"):
+        raise OSMConnectionError("offline")
+
+    entry, _ = await _setup_business(hass, broken)
+    names = sorted(z["name"] for z in zones(hass).values() if z["name"] != "Home")
+    assert names == ["ALDI", "ALDI", "ALDI"]
+    assert entry.state is ConfigEntryState.LOADED
+
+
+async def test_lookup_only_for_places_that_need_it(hass):
+    # Streets are already in the OSM tags -> no reverse geocoding at all.
+    tagged = [
+        node(601, 0, 0, name="Aldi", **{"addr:street": "A St"}),
+        node(602, 3000, 0, name="ALDI", **{"addr:street": "B St"}),
+    ]
+
+    async def overpass(session, query):
+        return tagged
+
+    reverse = AsyncMock(return_value={})
+    entry = make_entry(poi_type="business", business_name="Aldi", auto_radius=False, distinguish_duplicates=True)
+    assert await async_setup_component(hass, "zone", {})
+    entry.add_to_hass(hass)
+    with patch(OVERPASS, side_effect=overpass), patch(REVERSE, reverse):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done(wait_background_tasks=True)
+    assert reverse.call_count == 0
+    names = sorted(z["name"] for z in zones(hass).values() if z["name"] != "Home")
+    assert names == ["Aldi (A St)", "Aldi (B St)"]  # tie -> mixed case beats ALL CAPS

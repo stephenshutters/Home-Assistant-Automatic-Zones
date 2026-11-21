@@ -117,3 +117,29 @@ async def test_same_type_and_place_is_rejected(hass):
                 )
         assert result["type"] is expected
     assert result["reason"] == "already_configured"
+
+
+async def test_business_flow_asks_for_a_name_then_location(hass):
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"poi_type": "business"})
+    assert result["step_id"] == "business"
+
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"business_name": " W "})
+    assert result["step_id"] == "business" and result["errors"] == {"business_name": "business_required"}
+
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"business_name": "Walmart"})
+    assert result["type"] is FlowResultType.MENU
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "city"})
+    with patch(GEOCODE, AsyncMock(return_value=[ROSWELL])):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"city": "Roswell", "state": "Georgia", "country": "US"}
+        )
+    assert result["step_id"] == "settings"
+    assert "Walmart" in result["description_placeholders"]["poi_type"]
+    with patch(SETUP, return_value=True):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"passive": True, "auto_radius": False, "search_radius": 15, "zone_radius": 100}
+        )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"]["poi_type"] == "business" and result["data"]["business_name"] == "Walmart"
+    assert result["title"] == "Walmart - Roswell, Georgia"
