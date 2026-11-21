@@ -66,7 +66,7 @@ _REVERSE_RATE_KEY = f"{DOMAIN}_nominatim_rate"
 # Icon for places found by business name, from their OSM tags.
 _AMENITY_ICONS = {
     "fuel": "mdi:gas-station", "restaurant": "mdi:food", "fast_food": "mdi:food",
-    "cafe": "mdi:coffee", "pharmacy": "mdi:pharmacy", "bank": "mdi:bank",
+    "cafe": "mdi:coffee", "pharmacy": "mdi:pill", "bank": "mdi:bank",
     "hospital": "mdi:hospital-building", "clinic": "mdi:medical-bag",
 }
 _CART_SHOPS = {"supermarket", "greengrocer", "convenience", "department_store", "mall", "variety_store"}

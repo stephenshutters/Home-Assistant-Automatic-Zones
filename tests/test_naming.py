@@ -152,3 +152,10 @@ def test_business_pattern_matches_whole_words_only():
     rx = re.compile(pat, re.I)
     assert rx.search("ALDI") and rx.search("Aldi Foods") and rx.search("The Aldi")
     assert not rx.search("Hughes Spalding Stadium") and not rx.search("Aldington")
+
+
+def test_no_icon_that_is_missing_from_material_design_icons():
+    from custom_components.automatic_zones import const, coordinator
+    icons = {t["icon"] for t in const.POI_TYPES.values()} | set(coordinator._AMENITY_ICONS.values())
+    assert "mdi:pharmacy" not in icons  # not in HA's MDI set (use mdi:pill)
+    assert all(i.startswith("mdi:") for i in icons)

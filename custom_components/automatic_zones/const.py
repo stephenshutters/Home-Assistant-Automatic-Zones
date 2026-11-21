@@ -124,7 +124,7 @@ POI_TYPES: Final = {
     },
     "pharmacy": {
         "name": "Pharmacies",
-        "icon": "mdi:pharmacy",
+        "icon": "mdi:pill",
         "radius": 100,
         "filters": [
             {"amenity": "pharmacy"},
