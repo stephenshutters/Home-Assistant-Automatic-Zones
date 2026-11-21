@@ -71,7 +71,7 @@
           "auto_radius": "Fit each zone around the building and its attached parking lot using OpenStreetMap outlines. Sizing runs in the background after setup.",
           "search_radius": "How far from the location above to look for places.",
           "zone_radius": "Used when OpenStreetMap has no building outline for a place, and when sizing from footprints is turned off.",
-          "distinguish_duplicates": "Off: every place keeps its exact name (twenty Starbucks are all called `Starbucks`). On: places that share a name get the street (or OSM id) added, e.g. `Starbucks (Holcomb Bridge Rd)`."
+          "distinguish_duplicates": "Off: every place keeps its exact name (twenty Starbucks are all called `Starbucks`). On: places that share a name get a street or city added, e.g. `Starbucks (Holcomb Bridge Rd)`."
         }
       }
     },
@@ -109,7 +109,7 @@
           "auto_radius": "Turn off to use the fallback radius for every zone.",
           "search_radius": "How far to look for places.",
           "zone_radius": "Radius used when no OpenStreetMap outline is available.",
-          "distinguish_duplicates": "Off: every place keeps its exact name (twenty Starbucks are all called `Starbucks`). On: places that share a name get the street (or OSM id) added, e.g. `Starbucks (Holcomb Bridge Rd)`."
+          "distinguish_duplicates": "Off: every place keeps its exact name (twenty Starbucks are all called `Starbucks`). On: places that share a name get a street or city added, e.g. `Starbucks (Holcomb Bridge Rd)`."
         }
       }
     }

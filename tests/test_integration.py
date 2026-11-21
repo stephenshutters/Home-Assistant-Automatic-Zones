@@ -467,7 +467,7 @@ async def test_business_mode_unifies_case_and_uses_streets_from_lookup(hass):
     })
     entry, queries = await _setup_business(hass, reverse)
 
-    assert 'name|brand' in queries[0] and '"Aldi",i' in queries[0]  # searched by name, not category
+    assert '["brand"~' in queries[0] and '"Aldi",i' in queries[0]  # searched by name, not category
     names = sorted(z["name"] for z in zones(hass).values() if z["name"] != "Home")
     assert names == ["ALDI (Alpharetta Hwy)", "ALDI (Holcomb Bridge Rd)", "ALDI (Mansell Rd)"]
     assert len(reverse.calls) == 3

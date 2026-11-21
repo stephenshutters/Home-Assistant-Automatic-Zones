@@ -251,8 +251,11 @@ def build_business_query(name: str, lat: float, lon: float, radius_m: int) -> st
     """Every shop/amenity/office ... whose name or brand contains ``name``."""
     pattern = business_name_regex(name)
     around = f"(around:{radius_m},{lat},{lon})"
+    # Explicit keys (not a key regex, which Overpass answers far more slowly).
     parts = "".join(
-        f'nwr[~"^(name|brand)$"~"{pattern}",i]{sel}{around};' for sel in _PLACE_SELECTORS
+        f'nwr["{key}"~"{pattern}",i]{sel}{around};'
+        for sel in _PLACE_SELECTORS
+        for key in ("name", "brand")
     )
     return f"[out:json][timeout:60];({parts});out tags center;"
 
